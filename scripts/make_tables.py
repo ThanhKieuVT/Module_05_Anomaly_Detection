@@ -1,6 +1,6 @@
 """Build LaTeX tables straight from MLflow (only runs tagged final=true by default).
 
-    python scripts/make_tables.py --phase single_task --metric i_auroc --out tables/single_task.tex
+python scripts/make_tables.py --phase single_task --metric i_auroc --out tables/single_task.tex
 """
 
 from __future__ import annotations

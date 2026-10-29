@@ -1,7 +1,7 @@
 """Download every ``fscad-*`` model at a given alias into the serving products directory.
 
-    python scripts/pull_registry.py --alias production --out artifacts/serving
-    curl -X POST localhost:8000/reload
+python scripts/pull_registry.py --alias production --out artifacts/serving
+curl -X POST localhost:8000/reload
 """
 
 from __future__ import annotations

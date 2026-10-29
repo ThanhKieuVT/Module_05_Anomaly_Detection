@@ -1,6 +1,6 @@
 """Write the fixed few-shot splits (tracked by DVC).
 
-    python scripts/make_splits.py --dataset mvtec_ad --data-root data --shots 1 2 4 8 16 --seeds 0 1 2
+python scripts/make_splits.py --dataset mvtec_ad --data-root data --shots 1 2 4 8 16 --seeds 0 1 2
 """
 
 from __future__ import annotations
