@@ -1,0 +1,3 @@
+name: dinov2_vits14   # timm: vit_small_patch14_dinov2.lvd142m, D=384, 12 blocks, 6 heads
+pretrained: true
+img_size: 448         # 448 / 14 = 32x32 patch grid

@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      promote:
+        description: "Evaluate on real data and promote to the registry (needs the GPU runner)"
+        type: boolean
+        default: false
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install ruff black
+      - run: ruff check .
+      - run: black --check .
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11", cache: pip}
+      - run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -e ".[dev]"
+      - run: pytest
+
+  # Small end-to-end run: toy data -> train 1 class -> evaluate -> gate. No download needed.
+  smoke:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11", cache: pip}
+      - run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -e ".[dev]"
+      - run: python scripts/make_toy_dataset.py --root data/toy
+      - run: >-
+          python -m fscad.evaluate dataset=toy model=tiny device=cpu classes=[alpha] shots=2
+          train.steps=20 tracking.enabled=false hydra.run.dir=results/ci
+      - run: python scripts/check_gate.py results/ci/summary.json --min-i-auroc 0.7 --max-latency-ms 2000
+      - uses: actions/upload-artifact@v4
+        with: {name: smoke-results, path: results/ci}
+
+  # Manual: real evaluation on the GPU runner, promote only if the gate passes.
+  promote:
+    if: github.event_name == 'workflow_dispatch' && inputs.promote
+    needs: smoke
+    runs-on: [self-hosted, gpu]
+    env:
+      MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {submodules: false}
+      - run: pip install -e ".[mlops]"
+      - run: dvc pull splits/mvtec_ad data/mvtec_ad
+      - run: >-
+          python -m fscad.evaluate dataset=mvtec_ad classes=[bottle] shots=4 seeds=[0]
+          run_name=ci phase=system hydra.run.dir=results/promote
+      - run: python scripts/check_gate.py results/promote/summary.json --min-au-pro 0.85 --max-latency-ms 200
+      - run: >-
+          python scripts/register_model.py artifacts/ci/mvtec_ad/bottle/k4_s0.pt --alias production
+          --gate results/promote/summary.json --min-au-pro 0.85

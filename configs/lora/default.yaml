@@ -1,0 +1,5 @@
+enabled: true
+r: 8
+alpha: 16.0
+dropout: 0.0
+blocks: 4      # LoRA on W_Q and W_V of the last L blocks

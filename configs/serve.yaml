@@ -1,0 +1,15 @@
+# Settings for serving/app.py (overridable with env vars, see serving/README in the main README).
+defaults:
+  - model: dinov2_vits14
+  - lora: default
+  - train: default
+  - _self_
+method: lora
+device: auto
+products_dir: artifacts/serving
+cache_size: 8              # adapters kept in memory (LRU)
+onboard_steps: 100
+memory: {k: 1, augment: [hflip, vflip], coreset_ratio: null, max_size: 20000}
+eval: {batch_size: 8, num_workers: 0, mask_size: 256, pixel: true, image_score: top_mean, top_q: 0.01, sigma: 4.0, threshold_quantile: 0.99, max_test_images: null}
+router: {n_prototypes: 1, tau_quantile: 0.01}
+drift: {window: 200, min_samples: 50}

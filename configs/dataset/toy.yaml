@@ -1,0 +1,2 @@
+# Synthetic MVTec-layout data from scripts/make_toy_dataset.py (tests, CI, smoke runs).
+name: toy

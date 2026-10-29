@@ -1,0 +1,7 @@
+# @package _global_
+# Frozen DINOv2 + kNN (in-house AnomalyDINO baseline): no adapter, no training.
+method: knn
+lora:
+  enabled: false
+train:
+  steps: 0

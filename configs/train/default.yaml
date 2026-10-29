@@ -1,0 +1,11 @@
+steps: 200
+batch_size: 8          # half normal views, half synthetic anomalies
+lr: 1.0e-3
+weight_decay: 0.0
+synthetic: mixed       # perlin | cutpaste | mixed
+use_synthetic: true    # false = compactness only (ablation)
+center: knn            # knn | mean (single centre as written in the report)
+margin: 0.5            # gamma, in cosine distance
+lam: 1.0
+log_every: 20
+collapse_spread: 0.02  # warn if normal patches collapse below this mean pairwise distance

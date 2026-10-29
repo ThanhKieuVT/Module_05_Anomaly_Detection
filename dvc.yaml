@@ -1,0 +1,46 @@
+# dvc repro                      -> splits, train and evaluate for every dataset below
+# dvc repro evaluate@mvtec_ad    -> one dataset only
+# Data folders (data/<dataset>) are added with `dvc add`, see README.
+vars:
+  - shots: 4
+  - seeds: "[0,1,2]"
+
+stages:
+  splits:
+    foreach: [mvtec_ad, visa, mvtec_ad2]
+    do:
+      cmd: python scripts/make_splits.py --dataset ${item} --shots 1 2 4 8 16 --seeds 0 1 2
+      deps:
+        - data/${item}
+        - scripts/make_splits.py
+        - src/fscad/data/splits.py
+      outs:
+        - splits/${item}
+
+  train:
+    foreach: [mvtec_ad, visa]
+    do:
+      cmd: >-
+        python -m fscad.train dataset=${item} method=lora shots=${shots} seeds=${seeds}
+        run_name=dvc phase=single_task hydra.run.dir=results/dvc/${item}/train
+      deps:
+        - splits/${item}
+        - src/fscad
+        - configs
+      outs:
+        - artifacts/dvc/${item}
+
+  evaluate:
+    foreach: [mvtec_ad, visa]
+    do:
+      cmd: >-
+        python -m fscad.evaluate dataset=${item} method=lora shots=${shots} seeds=${seeds}
+        run_name=dvc reuse_artifacts=true phase=single_task hydra.run.dir=results/dvc/${item}/evaluate
+      deps:
+        - artifacts/dvc/${item}
+        - src/fscad
+      outs:
+        - results/dvc/${item}/evaluate/results.csv
+      metrics:
+        - results/dvc/${item}/evaluate/summary.json:
+            cache: false

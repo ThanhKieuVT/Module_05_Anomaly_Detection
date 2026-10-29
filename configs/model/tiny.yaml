@@ -1,0 +1,4 @@
+# Randomly initialised small ViT: no download, used by tests and CI only.
+name: dinov2_vits14
+pretrained: false
+img_size: 112

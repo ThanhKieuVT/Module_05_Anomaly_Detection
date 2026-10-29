@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# data and outputs (data is tracked by DVC, never by git)
+/data/*
+!/data/.gitkeep
+/data_views/
+/artifacts/
+/outputs/
+/multirun/
+/results/
+/mlruns/
+/mlflow.db
+/tables/
+*.onnx
+
+# DVC local (DVC adds its own .gitignore entries for tracked outputs)
+.dvc/tmp
+.dvc/cache
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

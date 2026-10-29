@@ -1,0 +1,6 @@
+[submodule "third_party/AnomalyDINO"]
+	path = third_party/AnomalyDINO
+	url = https://github.com/dammsi/AnomalyDINO.git
+[submodule "third_party/patchcore-inspection"]
+	path = third_party/patchcore-inspection
+	url = https://github.com/amazon-science/patchcore-inspection.git

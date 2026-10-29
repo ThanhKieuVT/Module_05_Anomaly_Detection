@@ -1,0 +1,12 @@
+.git
+.venv
+data
+data_views
+artifacts
+outputs
+multirun
+results
+mlruns
+third_party
+tests
+**/__pycache__

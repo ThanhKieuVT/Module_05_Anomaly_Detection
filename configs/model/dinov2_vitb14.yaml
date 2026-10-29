@@ -1,0 +1,3 @@
+name: dinov2_vitb14   # timm: vit_base_patch14_dinov2.lvd142m, D=768, 12 blocks, 12 heads
+pretrained: true
+img_size: 448

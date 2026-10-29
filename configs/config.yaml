@@ -1,0 +1,67 @@
+# Main Hydra config. Override anything from the command line, e.g.
+#   python -m fscad.evaluate dataset=visa method=knn shots=4 seeds=[0,1,2]
+defaults:
+  - dataset: mvtec_ad
+  - model: dinov2_vits14
+  - lora: default
+  - train: default
+  - method: lora
+  - _self_
+
+phase: dev            # tag: dev | baseline | single_task | ablation | continual | system
+run_name: ${method}_${model.name}_r${lora.r}_L${lora.blocks}
+classes: null         # null = all classes of the dataset, or a list: [bottle,screw]
+shots: 4
+seeds: [0]
+device: auto          # auto | cuda | mps | cpu
+save_artifacts: true
+reuse_artifacts: false
+
+paths:
+  data_root: data
+  splits_dir: splits
+  artifacts_dir: artifacts
+
+memory:
+  k: 1                       # neighbours in kNN scoring
+  augment: [hflip, vflip]    # views of the shots added to the memory bank / used in training
+  coreset_ratio: null        # e.g. 0.1 for PatchCore-style subsampling
+  max_size: null
+
+eval:
+  batch_size: 8
+  num_workers: 2
+  mask_size: 256             # resolution of pixel metrics
+  pixel: true
+  image_score: top_mean      # top_mean (mean of top q% patches, AnomalyDINO) | max
+  top_q: 0.01
+  sigma: 4.0
+  threshold_quantile: 0.99   # per-product decision threshold from normal validation scores
+  max_test_images: null      # subsample the test set for quick runs
+
+router:
+  n_prototypes: 1            # >1 = k-means prototypes on CLS (gate-3 fallback)
+  tau_quantile: 0.01
+
+continual:
+  datasets: [mvtec_ad]
+  holdout: []                # e.g. [visa/candle, visa/fryum, visa/pcb1]
+  order: alphabetical        # alphabetical | random
+  order_seed: 0
+  max_tasks: null
+
+tracking:
+  enabled: true
+  uri: ${oc.env:MLFLOW_TRACKING_URI,mlruns}
+  experiment: fscad
+  require_clean: false
+  final: false               # true only for runs that go into the paper; requires a clean git tree
+
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}_${hydra.job.name}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}_${hydra.job.override_dirname}
+  job:
+    chdir: false

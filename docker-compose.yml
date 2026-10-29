@@ -1,0 +1,54 @@
+# docker compose up --build
+#   API        http://localhost:8000/docs
+#   MLflow     http://localhost:5000
+#   Prometheus http://localhost:9090
+#   Grafana    http://localhost:3000  (dashboard "fscad", anonymous viewer)
+services:
+  api:
+    build: .
+    ports: ["8000:8000"]
+    environment:
+      FSCAD_PRODUCTS_DIR: /app/artifacts/serving
+      FSCAD_OVERRIDES: ${FSCAD_OVERRIDES:-model=dinov2_vits14 device=auto}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ./artifacts:/app/artifacts
+      - hf-cache:/cache/huggingface
+    depends_on: [mlflow]
+    # GPU: uncomment (requires the NVIDIA container toolkit) and build with the CUDA torch index
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{driver: nvidia, count: 1, capabilities: [gpu]}]
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.5.0
+    command: >
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --artifacts-destination /mlflow/artifacts
+    ports: ["5000:5000"]
+    volumes: [mlflow-data:/mlflow]
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    ports: ["9090:9090"]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+    depends_on: [api]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports: ["3000:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus]
+
+volumes:
+  hf-cache:
+  mlflow-data:

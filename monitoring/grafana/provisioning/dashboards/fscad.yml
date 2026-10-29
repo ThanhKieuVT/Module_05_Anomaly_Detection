@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: fscad
+    folder: fscad
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
