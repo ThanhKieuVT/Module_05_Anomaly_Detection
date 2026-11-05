@@ -65,7 +65,7 @@ drift:                       # H3 offline benchmark (fscad.drift_eval)
 
 tracking:
   enabled: true
-  uri: ${oc.env:MLFLOW_TRACKING_URI,mlruns}
+  uri: ${oc.env:MLFLOW_TRACKING_URI,sqlite:///mlflow.db}   # MLflow 3 no longer writes to ./mlruns
   experiment: fscad
   require_clean: false
   final: false               # true only for runs that go into the paper; requires a clean git tree

@@ -10,3 +10,5 @@ mlruns
 third_party
 tests
 **/__pycache__
+mlflow.db
+mlartifacts

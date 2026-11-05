@@ -77,7 +77,7 @@ dvc repro splits          # = python scripts/make_splits.py --dataset <d> --shot
 
 ## Running experiments
 
-Tracking goes to `./mlruns` unless `MLFLOW_TRACKING_URI` is set (e.g. the compose MLflow server
+Tracking goes to `sqlite:///mlflow.db` (view with `mlflow ui --backend-store-uri sqlite:///mlflow.db`) unless `MLFLOW_TRACKING_URI` is set (e.g. the compose MLflow server
 `http://localhost:5000`). In zsh, quote overrides that contain brackets.
 
 ```bash
