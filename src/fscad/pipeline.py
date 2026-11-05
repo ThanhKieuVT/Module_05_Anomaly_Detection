@@ -13,6 +13,7 @@ from fscad.data.splits import load_split
 from fscad.metrics import all_metrics
 from fscad.models.backbone import DinoBackbone, build_backbone
 from fscad.product import ProductModel, fit_product, score_product
+from fscad.scoring.masking import masking_default
 from fscad.utils import get_device, timer
 
 
@@ -56,6 +57,7 @@ def fit_from_split(
         val_images=load_images(split["val_paths"], img_size),
         seed=seed,
         tracker=tracker,
+        masking=masking_default(dataset, cls, cfg.eval.masking),
     )
     product.meta.update({"dataset": dataset, "class": cls, "split": split["train"]})
     return product
@@ -93,6 +95,11 @@ def evaluate_product(cfg, backbone, device, product: ProductModel, dataset: str,
         np.concatenate(maps) if maps else None,
         pixel=cfg.eval.pixel,
     )
+    if product.score_threshold is not None:  # operating point of the per-product threshold delta
+        flag = scores > product.score_threshold
+        out["recall_at_delta"] = float(flag[labels == 1].mean()) if (labels == 1).any() else float("nan")
+        out["fpr_at_delta"] = float(flag[labels == 0].mean()) if (labels == 0).any() else float("nan")
+    out["masking"] = float(bool(product.meta.get("masking")))
     out["latency_ms_per_image"] = 1000 * t["inference"] / max(1, n)
     out["n_test"] = n
     return out

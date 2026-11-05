@@ -77,3 +77,20 @@ def test_load_mask_accepts_visa_region_ids(tmp_path):
     Image.fromarray(m).save(tmp_path / "m.png")
     out = load_mask(str(tmp_path / "m.png"), 16).numpy()
     assert out.sum() == 16 + 4
+
+
+def test_foreground_mask_keeps_centred_object():
+    from fscad.scoring.masking import foreground_mask, masking_default
+
+    torch.manual_seed(0)
+    h = w = 16
+    obj = torch.zeros(h, w, dtype=torch.bool)
+    obj[4:12, 4:12] = True  # object covers most of the central crop, as on real images
+    d = 32
+    bg, fg = torch.randn(d), torch.randn(d)
+    tokens = torch.where(obj.reshape(-1, 1), fg * 40, bg * 40) + torch.randn(h * w, d)
+    for sign in (1, -1):  # PCA sign is arbitrary; the centre test must pick the object either way
+        m = foreground_mask(sign * tokens[None], (h, w))[0].reshape(h, w)
+        assert m[obj].all() and m.sum() < h * w / 2
+    assert masking_default("visa", "pcb1", "auto") and not masking_default("mvtec_ad", "carpet", "auto")
+    assert masking_default("mvtec_ad", "screw", "auto") and not masking_default("visa", "pcb1", False)

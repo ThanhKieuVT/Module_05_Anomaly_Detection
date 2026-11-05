@@ -27,6 +27,7 @@ from fscad.models.lora import (
     reset_lora,
 )
 from fscad.models.memory_bank import MemoryBank
+from fscad.scoring.masking import foreground_mask
 from fscad.scoring.scoring import anomaly_map, image_score
 from fscad.training.losses import compactness_margin_loss
 from fscad.utils import log
@@ -196,8 +197,14 @@ def fit_product(
     val_images: torch.Tensor | None = None,
     seed: int = 0,
     tracker=None,
+    masking: bool = False,
 ) -> ProductModel:
-    meta: dict = {"shots": int(shots.shape[0]), "seed": seed, "model": cfg.model.name}
+    meta: dict = {
+        "shots": int(shots.shape[0]),
+        "seed": seed,
+        "model": cfg.model.name,
+        "masking": bool(masking),
+    }
     t0 = time.perf_counter()
     lora = None
     if backbone.use_lora and cfg.train.steps > 0:
@@ -251,6 +258,8 @@ def score_product(
         x = normalize(images[i : i + ec.batch_size].to(device))
         feats = backbone(x, adapted=True)
         d = product.memory.query(feats.patches)
+        if product.meta.get("masking"):  # background patches score 0 (AnomalyDINO)
+            d = d * foreground_mask(feats.patches, feats.grid).to(d.device, d.dtype)
         scores.append(image_score(d, ec.image_score, ec.top_q).cpu())
         if with_maps:
             maps.append(anomaly_map(d, feats.grid, (size, size), ec.sigma).cpu())

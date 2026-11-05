@@ -193,5 +193,9 @@ registers the product only if AU-PRO and latency pass the gate.
 * **Compactness reference.** `train.center=knn` (default) pulls each normal patch towards its nearest
   normal patch of another view, which matches kNN scoring and keeps object parts apart.
   `train.center=mean` is the single-centre form.
+* **Background masking.** `eval.masking=auto` scores only foreground patches (first PCA component
+  of the patch tokens, as in AnomalyDINO): on for every VisA class and for MVTec AD capsule,
+  hazelnut, pill, screw, toothbrush. Stains on the mat or conveyor then cannot raise an alarm.
 * **Thresholds.** Router `tau` is the 1% quantile of correct-class CLS similarity on held-out normal
-  images; the per-product decision threshold is the 99% quantile of their anomaly scores.
+  images (30 per class, disjoint from the shots); the per-product decision threshold is the 99%
+  quantile of their anomaly scores. `evaluate` logs recall and FPR at that threshold.

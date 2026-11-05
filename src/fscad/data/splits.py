@@ -18,7 +18,7 @@ def split_path(splits_dir: str | Path, dataset: str, cls: str, shots: int, seed:
     return Path(splits_dir) / dataset / cls / f"k{shots}_s{seed}.json"
 
 
-def make_split(dataset: str, root: str | Path, cls: str, shots: int, seed: int, n_val: int = 10) -> dict:
+def make_split(dataset: str, root: str | Path, cls: str, shots: int, seed: int, n_val: int = 30) -> dict:
     train = sorted(s.path for s in list_samples(dataset, root, cls, "train"))
     if len(train) < shots:
         raise ValueError(f"{dataset}/{cls}: only {len(train)} train images, need {shots}")

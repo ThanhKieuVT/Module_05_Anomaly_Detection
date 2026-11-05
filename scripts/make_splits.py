@@ -19,7 +19,7 @@ def main() -> None:
     ap.add_argument("--splits-dir", default="splits")
     ap.add_argument("--shots", type=int, nargs="+", default=[1, 2, 4, 8, 16])
     ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
-    ap.add_argument("--n-val", type=int, default=10)
+    ap.add_argument("--n-val", type=int, default=30)
     args = ap.parse_args()
     root = Path(args.data_root) / args.dataset
     n = 0

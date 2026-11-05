@@ -37,6 +37,7 @@ eval:
   top_q: 0.01
   sigma: 4.0
   threshold_quantile: 0.99   # per-product decision threshold from normal validation scores
+  masking: auto              # zero-shot background masking: auto (AnomalyDINO per-class choice) | true | false
   max_test_images: null      # subsample the test set for quick runs
 
 router:
