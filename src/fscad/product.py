@@ -90,6 +90,26 @@ def activate(backbone: DinoBackbone, product: ProductModel) -> None:
 
 
 # --------------------------------------------------------------------------- training
+def sample_normal_views(k: int, n_views: int, n: int, g: torch.Generator) -> list[tuple[int, int, int]]:
+    """Pick up to ``n`` distinct (shot, view) pairs for one batch; returns (shot, view, ref_id).
+
+    The kNN compactness reference of a patch must come from a different ``ref_id``. Pairs are drawn
+    without replacement, so a batch never holds two identical views (their nearest-neighbour
+    distance would be 0 and give no gradient). With K >= 2 the id is the shot, so a view is never
+    pulled towards a flip of itself (which would only teach flip invariance) and the batch covers as
+    many different shots as possible. With K = 1 the only other images are views of the same shot,
+    so the id is the (shot, view) pair and the batch is capped at the number of distinct views.
+    """
+    order = torch.randperm(k * n_views, generator=g).tolist()
+    chosen, shots_seen = [], set()
+    for p in order:  # first one view of as many different shots as possible
+        if p // n_views not in shots_seen:
+            chosen.append(p)
+            shots_seen.add(p // n_views)
+    chosen = chosen[:n] + [p for p in order if p not in chosen][: max(0, n - len(chosen))]
+    return [(p // n_views, p % n_views, p // n_views if k >= 2 else p) for p in chosen]
+
+
 def train_adapter(
     backbone: DinoBackbone, shots: torch.Tensor, cfg, device: torch.device, seed: int = 0, tracker=None
 ) -> dict:
@@ -103,26 +123,27 @@ def train_adapter(
     opt = torch.optim.AdamW(params, lr=tc.lr, weight_decay=tc.weight_decay)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, tc.steps))
     k = shots.shape[0]
+    views = augment.pool(list(cfg.memory.augment))
     stats = {"loss": [], "compact": [], "margin": [], "spread": []}
     t0 = time.perf_counter()
     for step in range(tc.steps):
-        # half normal views, half synthetic anomalies; at least two distinct normal views
+        # half normal views (distinct, see sample_normal_views), half synthetic anomalies
         n_norm = max(2, tc.batch_size // 2)
         n_anom = max(1, tc.batch_size - n_norm)
-        idx = torch.randint(k, (n_norm + n_anom,), generator=g)
+        normal = sample_normal_views(k, len(views), n_norm, g)
         imgs, masks, ids = [], [], []
-        for j, i in enumerate(idx.tolist()):
-            view = augment.random_view(shots[i], list(cfg.memory.augment), g)
-            if j < n_norm:
-                imgs.append(view)
-                masks.append(torch.zeros(view.shape[1:]))
-                ids.append(j)  # each normal view counts as its own "image" for the kNN reference
-            else:
-                src = shots[int(torch.randint(k, (1,), generator=g))]
-                a, m = synthesize(view, src, tc.synthetic, g)
-                imgs.append(a)
-                masks.append(m)
-                ids.append(-1 - j)
+        for i, a, ref_id in normal:
+            imgs.append(augment.apply(shots[i], views[a]))
+            masks.append(torch.zeros(shots.shape[2:]))
+            ids.append(ref_id)
+        for j in range(n_anom):
+            view = augment.random_view(shots[int(torch.randint(k, (1,), generator=g))], views, g)
+            src = shots[int(torch.randint(k, (1,), generator=g))]
+            a, m = synthesize(view, src, tc.synthetic, g)
+            imgs.append(a)
+            masks.append(m)
+            ids.append(-1 - j)
+        n_norm = len(normal)  # fewer than asked when K * views is small (K = 1)
         x = normalize(torch.stack(imgs).to(device))
         feats = backbone(x, adapted=True)
         labels = patch_labels(torch.stack(masks).to(device), feats.grid)

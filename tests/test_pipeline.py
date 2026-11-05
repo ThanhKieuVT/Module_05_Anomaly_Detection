@@ -6,7 +6,7 @@ import numpy as np
 from omegaconf import OmegaConf
 from PIL import Image
 
-from fscad import continual, evaluate
+from fscad import continual, drift_eval, evaluate
 from fscad.pipeline import load_images
 from fscad.product import ProductModel
 from tests.conftest import make_cfg
@@ -34,8 +34,47 @@ def test_continual_with_holdout(toy_root, tmp_path):
     f = res["final"]
     assert res["order"] == ["toy/alpha", "toy/beta"]
     assert f["fm_oracle"] == 0.0
-    assert 0.0 <= f["routing_acc"] <= 1.0 and "reject_auroc" in f
+    assert 0.0 <= f["routing_acc"] <= f["routing_acc_argmax"] <= 1.0 and "reject_auroc" in f
+    for p in continual.REJECT_POLICIES:
+        assert f"fm_real_{p}" in f and f"avg_i_auroc_real_{p}" in f
+    assert 0.0 <= f["reject_rate_normal"] <= 1.0 and 0.0 <= f["reject_rate_anomalous"] <= 1.0
+    assert set(res["holdout_rejection"]) == {"toy/gamma"}
+    assert isinstance(res["routing_confusions"], list)
     assert len(res["steps"]) == 2
+
+
+def test_system_scores_place_rejections():
+    s = np.array([0.2, np.nan, 0.9, np.nan])
+    rej = np.array([False, True, False, True])
+    alarm = continual.system_scores(s, rej, "alarm")
+    miss = continual.system_scores(s, rej, "miss")
+    assert (alarm[rej] > np.nanmax(s)).all() and (miss[rej] < np.nanmin(s)).all()
+    assert np.array_equal(alarm[~rej], s[~rej]) and np.isfinite(alarm).all()
+    # a rejected defect is caught under "alarm" and missed under "miss"
+    labels = np.array([0, 1, 0, 1])
+    from fscad.metrics import image_auroc
+
+    assert image_auroc(labels, alarm) == 1.0 and image_auroc(labels, miss) == 0.0
+
+
+def test_routing_confusions():
+    rows = continual.routing_confusions(["a", "a", "a", "b"], ["a", "b", "b", "b"])
+    assert rows == [{"true": "a", "pred": "b", "n": 2, "rate": 2 / 3}]
+
+
+def test_drift_eval_runs(toy_root, tmp_path):
+    cfg = make_cfg(
+        toy_root,
+        tmp_path,
+        "classes=[alpha]",
+        "drift.levels=[0.0,0.5,1.0]",
+        "drift.min_samples=2",
+        "drift.window=10",
+    )
+    rows, summaries = drift_eval.run(cfg)
+    assert [r["level"] for r in rows] == [0.0, 0.5, 1.0]
+    assert all(np.isfinite(r["i_auroc"]) for r in rows)
+    assert set(summaries[0]) >= {"alarm_level", "drop_level", "alarm_before_drop", "false_alarm_clean"}
 
 
 def test_service_onboard_and_predict(toy_root, tmp_path):

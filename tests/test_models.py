@@ -88,3 +88,30 @@ def test_router_routes_and_rejects():
     k = PrototypeRouter(n_prototypes=2)
     k.register("a", torch.cat([a + 0.01 * torch.randn(4, 16), b + 0.01 * torch.randn(4, 16)]))
     assert k.prototypes["a"].shape == (2, 16)
+
+
+def test_normal_views_are_distinct_and_ids_follow_shots():
+    from fscad.product import sample_normal_views
+
+    g = torch.Generator().manual_seed(0)
+    for _ in range(50):
+        # K >= 2: no duplicate (shot, view); id = shot; several shots per batch
+        v = sample_normal_views(k=4, n_views=3, n=4, g=g)
+        pairs = [(i, a) for i, a, _ in v]
+        assert len(set(pairs)) == len(pairs) == 4
+        assert all(ref == i for i, _, ref in v) and len({i for i, _, _ in v}) == 4
+        v = sample_normal_views(k=2, n_views=3, n=4, g=g)
+        assert len({(i, a) for i, a, _ in v}) == 4 and {i for i, _, _ in v} == {0, 1}
+        # K = 1: capped at the number of distinct views, each view its own id
+        v = sample_normal_views(k=1, n_views=3, n=4, g=g)
+        assert len(v) == 3 and len({ref for _, _, ref in v}) == 3
+
+
+def test_relight_severity_zero_is_identity():
+    from fscad.data.photometric import KINDS, relight
+
+    x = torch.rand(2, 3, 8, 8)
+    for kind in KINDS:
+        assert torch.allclose(relight(x, kind, 0.0), x)
+        y = relight(x, kind, 1.0)
+        assert y.shape == x.shape and not torch.allclose(y, x) and y.min() >= 0 and y.max() <= 1

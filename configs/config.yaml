@@ -45,10 +45,22 @@ router:
 
 continual:
   datasets: [mvtec_ad]
-  holdout: []                # e.g. [visa/candle, visa/fryum, visa/pcb1]
+  # held-out products should resemble registered ones, otherwise rejection is trivially easy,
+  # e.g. [visa/pcb4, visa/macaroni2, mvtec_ad/screw] with pcb1-3, macaroni1 and metal_nut known
+  holdout: []
+  reject_policy: alarm       # rejected image counts as alarm | miss (both are always reported)
   order: alphabetical        # alphabetical | random
   order_seed: 0
   max_tasks: null
+
+drift:                       # H3 offline benchmark (fscad.drift_eval)
+  kind: mixed                # brightness | gamma | color_temp | mixed
+  levels: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0]   # severity; 0 = clean
+  anomaly_rate: 0.1          # share of anomalies in the simulated stream
+  window: 50
+  min_samples: 30
+  alpha: 0.01
+  delta: 0.02                # I-AUROC drop that counts as "quality has degraded"
 
 tracking:
   enabled: true

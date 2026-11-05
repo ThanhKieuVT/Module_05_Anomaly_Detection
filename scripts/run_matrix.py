@@ -2,7 +2,7 @@
 
     python scripts/run_matrix.py              # print the commands
     python scripts/run_matrix.py --run main   # run one group
-Groups: baseline, main, ablation, continual.
+Groups: baseline, main, ablation, continual, drift.
 """
 
 from __future__ import annotations
@@ -13,6 +13,10 @@ import subprocess
 
 SHOTS = "1,4,16"  # 2-week plan; the full plan uses 1,2,4,8,16
 SEEDS = "[0,1,2]"
+# held-out products for the rejection test: "near" ones resemble a registered product (pcb4 vs
+# pcb1-3, macaroni2 vs macaroni1, capsules vs MVTec capsule); "far" ones are a sanity check only
+HOLDOUT_NEAR = "[visa/pcb4,visa/macaroni2,visa/capsules]"
+HOLDOUT_FAR = "[visa/candle,visa/fryum,visa/chewinggum]"
 ABLATION_CLASSES = "[bottle,screw,carpet,transistor,pill]"
 
 GROUPS = {
@@ -32,8 +36,12 @@ GROUPS = {
         # reuse the single-task adapters (same run_name) so continual costs only routing + scoring
         "python -m fscad.continual -m phase=continual reuse_artifacts=true shots=4 continual.datasets=[mvtec_ad] "
         "continual.holdout=[] continual.order=alphabetical,random",
-        "python -m fscad.continual phase=continual reuse_artifacts=true shots=4 continual.datasets=[mvtec_ad,visa] "
-        "continual.holdout=[visa/candle,visa/fryum,visa/pcb1]",
+        "python -m fscad.continual -m phase=continual reuse_artifacts=true shots=4 continual.datasets=[mvtec_ad,visa] "
+        f"continual.holdout={HOLDOUT_NEAR},{HOLDOUT_FAR}",
+    ],
+    "drift": [
+        # synthetic lighting drift on test_public (has ground truth): alarm time vs quality drop
+        "python -m fscad.drift_eval -m phase=system dataset=mvtec_ad2 shots=4 drift.kind=brightness,gamma,color_temp,mixed",
     ],
 }
 

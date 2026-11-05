@@ -94,7 +94,19 @@ python scripts/run_matrix.py --run main    # runs one group: baseline | main | a
 
 # continual: reuse the single-task adapters, then route
 python -m fscad.continual reuse_artifacts=true shots=4 'continual.datasets=[mvtec_ad,visa]' \
-    'continual.holdout=[visa/candle,visa/fryum,visa/pcb1]' continual.order=random
+    'continual.holdout=[visa/pcb4,visa/macaroni2,visa/capsules]' continual.order=random
+```
+
+Held-out products should resemble registered ones (pcb4 vs pcb1-3, macaroni2 vs macaroni1),
+otherwise the rejection AUROC is high without saying much. An image rejected by the router gets no
+anomaly score; `continual.reject_policy=alarm|miss` decides how it counts in the real-routing
+AUROC (both are logged), and rejection rates are logged separately for normal and anomalous images.
+`continual_result.json` also lists the most frequent routing confusions.
+
+```bash
+# H3: synthetic lighting drift on MVTec AD 2 test_public (the only split with ground truth):
+# at which severity does the KS monitor alarm, and at which does I-AUROC drop?
+python -m fscad.drift_eval dataset=mvtec_ad2 'classes=[vial]' shots=4 drift.kind=mixed
 ```
 
 Useful knobs: `lora.r`, `lora.blocks`, `train.steps`, `train.synthetic=perlin|cutpaste|mixed`,

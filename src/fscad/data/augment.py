@@ -22,10 +22,14 @@ def apply(x: torch.Tensor, name: str) -> torch.Tensor:
 
 def expand(images: torch.Tensor, names: list[str]) -> torch.Tensor:
     """(B, C, H, W) -> (B * len(names), C, H, W)."""
-    names = ["identity"] + [n for n in names if n != "identity"]
-    return torch.cat([apply(images, n) for n in names])
+    return torch.cat([apply(images, n) for n in pool(names)])
+
+
+def pool(names: list[str]) -> list[str]:
+    """Distinct views of one shot: identity first, then the configured augmentations."""
+    return ["identity"] + [n for n in dict.fromkeys(names) if n != "identity"]
 
 
 def random_view(img: torch.Tensor, names: list[str], g: torch.Generator) -> torch.Tensor:
-    pool = ["identity"] + [n for n in names if n != "identity"]
-    return apply(img, pool[int(torch.randint(len(pool), (1,), generator=g))])
+    views = pool(names)
+    return apply(img, views[int(torch.randint(len(views), (1,), generator=g))])

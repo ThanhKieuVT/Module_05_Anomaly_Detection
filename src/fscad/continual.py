@@ -6,7 +6,14 @@ before is modified. After every step all seen products are evaluated twice:
 * oracle routing (true product known)   -> isolates detection error, FM is 0 by construction
 * real routing (prototype router)        -> system error = detection error + routing error
 
-Held-out products (never registered) measure the router's ability to reject unknown products.
+With real routing an image rejected as "unknown product" gets no anomaly score. How it counts is set
+by ``continual.reject_policy``: ``alarm`` (a rejection is an alert, ranked above every scored image)
+or ``miss`` (a rejection passes unflagged, ranked below every scored image). Both are reported;
+rejection rates are reported separately for normal and anomalous test images, because tau is
+calibrated on normal images only and strong defects may be rejected instead of flagged.
+
+Held-out products (never registered) measure the router's ability to reject unknown products; they
+are only informative when they resemble registered ones (e.g. visa/pcb4 held out, pcb1-3 known).
 
     python -m fscad.continual continual.datasets=[mvtec_ad] shots=4
     python -m fscad.continual continual.datasets=[mvtec_ad,visa] continual.holdout=[] continual.order=random
@@ -50,6 +57,41 @@ log = logging.getLogger("fscad.continual")
 def _nanmean(v) -> float:
     v = np.asarray(v, dtype=float)
     return float(np.nanmean(v)) if np.isfinite(v).any() else float("nan")
+
+
+REJECT_POLICIES = ("alarm", "miss")
+
+
+def system_scores(scores: np.ndarray, rejected: np.ndarray, policy: str) -> np.ndarray:
+    """Scores of the whole system: routed scores, with rejected images placed by the policy.
+
+    ``scores`` holds the routed product's score for accepted images (any value where rejected).
+    AUROC only uses the ranking, so rejected images get a value just above (alarm) or below (miss)
+    every accepted score.
+    """
+    rejected = np.asarray(rejected, dtype=bool)
+    out = np.asarray(scores, dtype=float).copy()
+    acc = out[~rejected]
+    hi, lo = (acc.max() + 1.0, acc.min() - 1.0) if acc.size else (1.0, 0.0)
+    if policy == "alarm":
+        out[rejected] = hi
+    elif policy == "miss":
+        out[rejected] = lo
+    else:
+        raise ValueError(f"unknown reject_policy {policy}; expected one of {REJECT_POLICIES}")
+    return out
+
+
+def routing_confusions(true: list[str], pred: list[str], top: int = 20) -> list[dict]:
+    """Most frequent (true, predicted) routing mistakes, with the rate within the true class."""
+    counts: dict[tuple[str, str], int] = {}
+    per_class: dict[str, int] = {}
+    for t, p in zip(true, pred, strict=True):
+        per_class[t] = per_class.get(t, 0) + 1
+        if t != p:
+            counts[(t, p)] = counts.get((t, p), 0) + 1
+    rows = [{"true": t, "pred": p, "n": n, "rate": n / per_class[t]} for (t, p), n in counts.items()]
+    return sorted(rows, key=lambda r: -r["n"])[:top]
 
 
 @contextmanager
@@ -121,16 +163,19 @@ def run(cfg: DictConfig) -> dict:
     tasks: dict[str, TaskData] = {}
     val_cls: dict[str, torch.Tensor] = {}
     T = len(known)
-    acc_real = np.full((T, T), np.nan)
+    policy = cfg.continual.reject_policy
+    if policy not in REJECT_POLICIES:
+        raise ValueError(f"continual.reject_policy must be one of {REJECT_POLICIES}")
+    acc_real = {p: np.full((T, T), np.nan) for p in REJECT_POLICIES}
     acc_oracle = np.full((T, T), np.nan)
     oracle_final: dict[str, dict] = {}
     step_rows = []
     bs = cfg.eval.batch_size
 
-    def score_missing(task: TaskData, routed: list[str]) -> None:
-        """Compute scores for (image, routed product) pairs not seen before."""
+    def score_missing(task: TaskData, routed: list[str], index) -> None:
+        """Compute scores for (image index, routed product) pairs not seen before."""
         by_product: dict[str, list[int]] = {}
-        for i, p in enumerate(routed):
+        for i, p in zip(index, routed, strict=True):
             if np.isnan(task.scores_for(p)[i]):
                 by_product.setdefault(p, []).append(i)
         for p, idx in by_product.items():
@@ -209,24 +254,43 @@ def run(cfg: DictConfig) -> dict:
             )
 
             # evaluate all seen tasks with real and oracle routing
-            correct = total = rejected_known = 0
+            correct = correct_argmax = total = 0
+            rej = {"normal": [0, 0], "anomalous": [0, 0]}  # [rejected, total]
             for j, prev in enumerate(known[: t + 1]):
                 tk = tasks[prev]
                 rr = router.route(tk.cls)
-                score_missing(tk, rr.best)
-                routed_scores = np.array([tk.scores_for(p)[i] for i, p in enumerate(rr.best)])
-                acc_real[t, j] = image_auroc(tk.labels, routed_scores)
+                rejected = rr.rejected.numpy()
+                accepted = [p for p, r in zip(rr.best, rejected, strict=True) if not r]
+                score_missing(tk, accepted, np.flatnonzero(~rejected))
+                routed = np.array(
+                    [
+                        np.nan if r else tk.scores_for(p)[i]
+                        for i, (p, r) in enumerate(zip(rr.best, rejected, strict=True))
+                    ]
+                )
+                for p in REJECT_POLICIES:
+                    acc_real[p][t, j] = image_auroc(tk.labels, system_scores(routed, rejected, p))
                 acc_oracle[t, j] = image_auroc(tk.labels, tk.scores_for(prev))
-                correct += sum(p == prev for p in rr.best)
+                correct += sum(n == prev for n in rr.names)  # accepted and routed correctly
+                correct_argmax += sum(p == prev for p in rr.best)
                 total += len(rr.best)
-                rejected_known += int(rr.rejected.sum())
+                for key, sel in (("normal", tk.labels == 0), ("anomalous", tk.labels == 1)):
+                    rej[key][0] += int(rejected[sel].sum())
+                    rej[key][1] += int(sel.sum())
             row = {
                 "step": t,
                 "task": name,
-                "avg_i_auroc_real": float(np.nanmean(acc_real[t, : t + 1])),
+                "n_classes": t + 1,
+                "avg_i_auroc_real": float(np.nanmean(acc_real[policy][t, : t + 1])),
+                **{
+                    f"avg_i_auroc_real_{p}": float(np.nanmean(acc_real[p][t, : t + 1]))
+                    for p in REJECT_POLICIES
+                },
                 "avg_i_auroc_oracle": float(np.nanmean(acc_oracle[t, : t + 1])),
                 "routing_acc": correct / max(1, total),
-                "false_reject_rate": rejected_known / max(1, total),
+                "routing_acc_argmax": correct_argmax / max(1, total),
+                "reject_rate_normal": rej["normal"][0] / max(1, rej["normal"][1]),
+                "reject_rate_anomalous": rej["anomalous"][0] / max(1, rej["anomalous"][1]),
                 "tau": router.tau,
             }
             step_rows.append(row)
@@ -241,17 +305,26 @@ def run(cfg: DictConfig) -> dict:
                 row["routing_acc"],
             )
 
-        # rejection of unregistered products
-        rej = {}
+        # rejection of unregistered products, overall and per held-out product
+        rej, per_holdout = {}, {}
         if holdout:
             known_cls = torch.cat([tasks[n].cls for n in known])
-            unk = []
+            sim_k = router.route(known_cls).similarity.numpy()
+            per_holdout, sim_u = {}, []
             for h in holdout:
                 hd = TaskData(cfg, h)
-                unk.append(frozen_cls(backbone, hd.images(range(len(hd.samples))), device, bs))
-            unk_cls = torch.cat(unk)
-            sim_k = router.route(known_cls).similarity.numpy()
-            sim_u = router.route(unk_cls).similarity.numpy()
+                rh = router.route(frozen_cls(backbone, hd.images(range(len(hd.samples))), device, bs))
+                s_h = rh.similarity.numpy()
+                sim_u.append(s_h)
+                nearest = max(set(rh.best), key=rh.best.count)
+                per_holdout[h] = {
+                    "true_reject_rate": float((s_h < router.tau).mean()),
+                    "reject_auroc": float(
+                        roc_auc_score(np.r_[np.zeros(len(sim_k)), np.ones(len(s_h))], -np.r_[sim_k, s_h])
+                    ),
+                    "nearest_known": nearest,
+                }
+            sim_u = np.concatenate(sim_u)
             y = np.r_[np.zeros(len(sim_k)), np.ones(len(sim_u))]
             rej = {
                 "reject_auroc": float(roc_auc_score(y, -np.r_[sim_k, sim_u])),
@@ -266,6 +339,7 @@ def run(cfg: DictConfig) -> dict:
         rr = router.route(all_cls)
         sims = rr.similarity.numpy()
         hit = np.array([b == o for b, o in zip(rr.best, own, strict=True)])
+        confusions = routing_confusions(own, rr.best)
         for q in np.linspace(0, 0.3, 31):
             thr = np.quantile(sims, q)
             acc_mask = sims >= thr
@@ -277,26 +351,34 @@ def run(cfg: DictConfig) -> dict:
             )
 
         final = {
-            "avg_i_auroc_real": float(np.nanmean(acc_real[T - 1])),
+            "reject_policy": policy,
+            "avg_i_auroc_real": float(np.nanmean(acc_real[policy][T - 1])),
             "avg_i_auroc_oracle": float(np.nanmean(acc_oracle[T - 1])),
-            "fm_real": forgetting_measure(acc_real),
+            "fm_real": forgetting_measure(acc_real[policy]),
+            **{f"avg_i_auroc_real_{p}": float(np.nanmean(acc_real[p][T - 1])) for p in REJECT_POLICIES},
+            **{f"fm_real_{p}": forgetting_measure(acc_real[p]) for p in REJECT_POLICIES},
             "fm_oracle": forgetting_measure(acc_oracle),
             "routing_acc": step_rows[-1]["routing_acc"],
+            "routing_acc_argmax": step_rows[-1]["routing_acc_argmax"],
+            "reject_rate_normal": step_rows[-1]["reject_rate_normal"],
+            "reject_rate_anomalous": step_rows[-1]["reject_rate_anomalous"],
             "tau": router.tau,
             "mb_per_class": float(np.mean([p.nbytes() for p in products.values()]) / 2**20),
             "oracle_au_pro_mean": _nanmean([m.get("au_pro", np.nan) for m in oracle_final.values()]),
             **rej,
         }
-        tracker.log_metrics(final)
+        tracker.log_metrics({k: v for k, v in final.items() if isinstance(v, float)})
         result = {
             "final": final,
             "steps": step_rows,
             "order": known,
             "holdout": holdout,
-            "acc_real": acc_real.tolist(),
+            "acc_real": {p: a.tolist() for p, a in acc_real.items()},
             "acc_oracle": acc_oracle.tolist(),
             "oracle_per_task": oracle_final,
             "routing_vs_reject": curve,
+            "routing_confusions": confusions,
+            "holdout_rejection": per_holdout,
         }
         tracker.log_dict(result, "continual_result.json")
     log.info(
