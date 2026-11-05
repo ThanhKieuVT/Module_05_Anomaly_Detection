@@ -34,6 +34,7 @@ from fscad.metrics import image_auroc
 from fscad.monitoring import DriftMonitor
 from fscad.pipeline import artifact_path, dataset_root, fit_from_split, load_images, resolve_classes, setup
 from fscad.product import ProductModel, activate
+from fscad.scoring.masking import foreground_mask
 from fscad.scoring.scoring import image_score
 from fscad.tracking import Tracker
 from fscad.utils import seed_everything
@@ -53,6 +54,8 @@ def cls_and_scores(backbone, product: ProductModel, paths, cfg, device, kind: st
         frozen, adapted = backbone.forward_both(normalize(x.to(device)))
         cls.append(frozen.cls.cpu())
         d = product.memory.query(adapted.patches)
+        if product.meta.get("masking"):  # same scoring as score_product
+            d = d * foreground_mask(frozen.patches, frozen.grid).to(d.device, d.dtype)
         scores.append(image_score(d, cfg.eval.image_score, cfg.eval.top_q).cpu())
     product.memory.to("cpu")
     return torch.cat(cls), torch.cat(scores).numpy()

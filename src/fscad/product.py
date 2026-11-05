@@ -256,10 +256,16 @@ def score_product(
     scores, maps = [], []
     for i in range(0, len(images), ec.batch_size):
         x = normalize(images[i : i + ec.batch_size].to(device))
-        feats = backbone(x, adapted=True)
-        d = product.memory.query(feats.patches)
-        if product.meta.get("masking"):  # background patches score 0 (AnomalyDINO)
-            d = d * foreground_mask(feats.patches, feats.grid).to(d.device, d.dtype)
+        if product.meta.get("masking"):
+            # background patches score 0 (AnomalyDINO). The mask must come from the frozen tokens:
+            # the PCA threshold is calibrated on DINOv2 features, and on adapted features it
+            # dropped up to 100% of the object (VisA chewinggum I-AUROC 0.97 -> 0.41).
+            frozen, feats = backbone.forward_both(x)
+            d = product.memory.query(feats.patches)
+            d = d * foreground_mask(frozen.patches, frozen.grid).to(d.device, d.dtype)
+        else:
+            feats = backbone(x, adapted=True)
+            d = product.memory.query(feats.patches)
         scores.append(image_score(d, ec.image_score, ec.top_q).cpu())
         if with_maps:
             maps.append(anomaly_map(d, feats.grid, (size, size), ec.sigma).cpu())

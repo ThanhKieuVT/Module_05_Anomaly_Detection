@@ -4,6 +4,7 @@ The first principal component of an image's patch tokens separates object from b
 centred objects. Patches with first PC > ``threshold`` are kept; if that keeps at most 35% of the
 central crop, the sign is flipped. The mask is dilated and closed with a 3x3 kernel. Background
 patches get anomaly score 0, so dust or stains on the conveyor or mat cannot raise an alarm.
+Always compute the mask on the frozen backbone tokens, never on LoRA-adapted ones.
 
 Per-class defaults follow AnomalyDINO's "agnostic" preprocessing: on for every VisA class, and on
 MVTec AD only for capsule, hazelnut, pill, screw and toothbrush (``masking: auto``).
