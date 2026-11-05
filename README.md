@@ -131,6 +131,23 @@ bash scripts/run_baselines.sh mvtec_ad     # AnomalyDINO + PatchCore on our spli
 `scripts/build_fewshot_view.py` builds a symlinked MVTec-layout folder containing exactly the K
 shots of a split, so the official code uses the same images as our runs.
 
+## Demo (no download)
+
+```bash
+python scripts/demo.py                                    # real DINOv2 ViT-S/14, ~3 min on a laptop GPU/MPS
+python scripts/demo.py --overrides "model=tiny onboard_steps=5"   # seconds, random weights
+```
+
+Starts the API, onboards two toy products from 4 normal images each, sends good and defective
+images of both and images of an unregistered third product, and prints per image: routed product,
+nearest product, CLS similarity, score, oracle score (true product forced) and the decision. It
+writes the anomaly map of one defective image to `outputs/demo/anomaly_map.png`.
+
+On toy data the large defects (20% of the image) shift the CLS token far enough that the router
+rejects them as unknown products, while the oracle scores flag all of them. This is why a rejection
+counts as an alert (`reject_policy=alarm`) and why rejection rates are reported separately for
+normal and defective images.
+
 ## Serving and monitoring
 
 ```bash
