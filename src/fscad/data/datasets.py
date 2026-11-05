@@ -167,8 +167,9 @@ def load_image(path: str | Path, size: int) -> torch.Tensor:
 def load_mask(path: str | None, size: int) -> torch.Tensor:
     if path is None:
         return torch.zeros(size, size)
+    # any non-zero pixel is defective: MVTec masks use 255, VisA masks use region ids 1, 2, ...
     m = Image.open(path).convert("L").resize((size, size), Image.NEAREST)
-    return torch.from_numpy((np.asarray(m) > 127).astype(np.float32))
+    return torch.from_numpy((np.asarray(m) > 0).astype(np.float32))
 
 
 def normalize(x: torch.Tensor) -> torch.Tensor:

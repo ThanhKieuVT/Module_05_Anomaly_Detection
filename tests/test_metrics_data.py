@@ -64,3 +64,16 @@ def test_loss_separates_normal_and_anomalous():
     assert out.loss.item() > 0 and feats.grad is not None
     out_mean = compactness_margin_loss(feats, labels, torch.tensor([0, 1, 2, -1]), center="mean")
     assert torch.isfinite(out_mean.loss)
+
+
+def test_load_mask_accepts_visa_region_ids(tmp_path):
+    from PIL import Image
+
+    from fscad.data.datasets import load_mask
+
+    m = np.zeros((16, 16), dtype=np.uint8)
+    m[2:6, 2:6] = 1  # VisA: region id 1
+    m[10:12, 10:12] = 255  # MVTec style
+    Image.fromarray(m).save(tmp_path / "m.png")
+    out = load_mask(str(tmp_path / "m.png"), 16).numpy()
+    assert out.sum() == 16 + 4
