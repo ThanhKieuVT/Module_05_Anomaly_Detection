@@ -1,6 +1,6 @@
 steps: 200
 batch_size: 8          # half normal views, half synthetic anomalies
-lr: 1.0e-3
+lr: 1.0e-4           # 1e-3 over-adapted the 4-shot pcb adapters (VisA pcb1-4, seed 0)
 weight_decay: 0.0
 synthetic: mixed       # perlin | cutpaste | mixed
 synthetic_on_foreground: true   # with background masking, put synthetic defects on the object
