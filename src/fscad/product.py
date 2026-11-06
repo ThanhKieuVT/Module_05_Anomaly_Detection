@@ -111,10 +111,33 @@ def sample_normal_views(k: int, n_views: int, n: int, g: torch.Generator) -> lis
     return [(p // n_views, p % n_views, p // n_views if k >= 2 else p) for p in chosen]
 
 
+@torch.no_grad()
+def view_foregrounds(backbone: DinoBackbone, shots: torch.Tensor, views: list[str], device) -> torch.Tensor:
+    """(K, V, H, W) pixel foreground masks of every view of every shot, from frozen tokens."""
+    k, _, h, w = shots.shape
+    x = torch.stack([augment.apply(s, v) for s in shots for v in views])
+    out = []
+    for i in range(0, len(x), 8):
+        f = backbone(normalize(x[i : i + 8].to(device)), adapted=False)
+        m = foreground_mask(f.patches, f.grid).reshape(-1, 1, *f.grid).float()
+        out.append(torch.nn.functional.interpolate(m, size=(h, w), mode="nearest")[:, 0])
+    return torch.cat(out).reshape(k, len(views), h, w)
+
+
 def train_adapter(
-    backbone: DinoBackbone, shots: torch.Tensor, cfg, device: torch.device, seed: int = 0, tracker=None
+    backbone: DinoBackbone,
+    shots: torch.Tensor,
+    cfg,
+    device: torch.device,
+    seed: int = 0,
+    tracker=None,
+    masking: bool = False,
 ) -> dict:
-    """shots: (K, 3, H, W) in [0, 1]. Returns training statistics."""
+    """shots: (K, 3, H, W) in [0, 1]. Returns training statistics.
+
+    With ``masking`` (the scorer ignores the background) synthetic anomalies are placed on the
+    object, see ``fscad.data.synthetic``; otherwise the adapter would learn defects on the mat.
+    """
     tc = cfg.train
     g = torch.Generator().manual_seed(seed)
     reset_lora(backbone.vit)
@@ -125,6 +148,8 @@ def train_adapter(
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, tc.steps))
     k = shots.shape[0]
     views = augment.pool(list(cfg.memory.augment))
+    on_fg = masking and tc.get("synthetic_on_foreground", True)
+    fgs = view_foregrounds(backbone, shots, views, device) if on_fg else None
     stats = {"loss": [], "compact": [], "margin": [], "spread": []}
     t0 = time.perf_counter()
     for step in range(tc.steps):
@@ -138,9 +163,11 @@ def train_adapter(
             masks.append(torch.zeros(shots.shape[2:]))
             ids.append(ref_id)
         for j in range(n_anom):
-            view = augment.random_view(shots[int(torch.randint(k, (1,), generator=g))], views, g)
+            i = int(torch.randint(k, (1,), generator=g))
+            v = int(torch.randint(len(views), (1,), generator=g))
             src = shots[int(torch.randint(k, (1,), generator=g))]
-            a, m = synthesize(view, src, tc.synthetic, g)
+            fg = None if fgs is None else fgs[i, v]
+            a, m = synthesize(augment.apply(shots[i], views[v]), src, tc.synthetic, g, fg)
             imgs.append(a)
             masks.append(m)
             ids.append(-1 - j)
@@ -208,7 +235,7 @@ def fit_product(
     t0 = time.perf_counter()
     lora = None
     if backbone.use_lora and cfg.train.steps > 0:
-        stats = train_adapter(backbone, shots, cfg, device, seed=seed, tracker=tracker)
+        stats = train_adapter(backbone, shots, cfg, device, seed=seed, tracker=tracker, masking=masking)
         meta.update(
             {
                 "train_seconds": stats["train_seconds"],

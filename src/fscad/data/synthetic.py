@@ -5,6 +5,10 @@
   method needs no external data.
 * CutPaste: a rectangle cut from the image, jittered, and pasted at another position.
 
+With a foreground mask ``fg`` (H, W) the anomaly is kept on the object: the Perlin blob is cut to
+``fg`` and redrawn if too little of it is left, and CutPaste is pasted where its centre lies on
+``fg``. Without it, on VisA most blobs land on the mat, which the scorer masks out anyway.
+
 All functions take and return images in [0, 1] with shape (3, H, W) and a mask (H, W) in {0, 1}.
 """
 
@@ -79,10 +83,21 @@ def color_jitter(x: torch.Tensor, g: torch.Generator, strength: float = 0.4) -> 
 
 
 def perlin_anomaly(
-    img: torch.Tensor, source: torch.Tensor, g: torch.Generator, beta_range: tuple[float, float] = (0.2, 0.8)
+    img: torch.Tensor,
+    source: torch.Tensor,
+    g: torch.Generator,
+    beta_range: tuple[float, float] = (0.2, 0.8),
+    fg: torch.Tensor | None = None,
+    min_frac: float = 0.005,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     _, h, w = img.shape
     mask = perlin_mask(h, g)
+    if fg is not None and fg.any():
+        for _ in range(20):
+            if (mask * fg).mean().item() >= min_frac:
+                break
+            mask = perlin_mask(h, g)
+        mask = mask * fg
     tex = color_jitter(source, g, 0.6)
     # scramble the texture spatially so it is not a copy of normal structure
     k = int(torch.randint(1, 4, (1,), generator=g))
@@ -99,6 +114,7 @@ def cutpaste_anomaly(
     g: torch.Generator,
     area: tuple[float, float] = (0.02, 0.15),
     aspect: tuple[float, float] = (0.3, 3.3),
+    fg: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     _, h, w = img.shape
     a = (area[0] + (area[1] - area[0]) * torch.rand(1, generator=g).item()) * h * w
@@ -113,6 +129,12 @@ def cutpaste_anomaly(
     patch = color_jitter(img[:, y0 : y0 + ph, x0 : x0 + pw], g, 0.2)
     y1 = int(torch.randint(0, h - ph + 1, (1,), generator=g))
     x1 = int(torch.randint(0, w - pw + 1, (1,), generator=g))
+    if fg is not None and fg.any():
+        for _ in range(50):
+            if fg[y1 + ph // 2, x1 + pw // 2]:
+                break
+            y1 = int(torch.randint(0, h - ph + 1, (1,), generator=g))
+            x1 = int(torch.randint(0, w - pw + 1, (1,), generator=g))
     out = img.clone()
     out[:, y1 : y1 + ph, x1 : x1 + pw] = patch
     mask = torch.zeros(h, w)
@@ -120,13 +142,17 @@ def cutpaste_anomaly(
     return out, mask
 
 
-def synthesize(img: torch.Tensor, source: torch.Tensor, kind: str, g: torch.Generator):
+def synthesize(
+    img: torch.Tensor, source: torch.Tensor, kind: str, g: torch.Generator, fg: torch.Tensor | None = None
+):
+    """fg: optional (H, W) foreground mask the anomaly must lie on."""
     if kind == "perlin":
-        return perlin_anomaly(img, source, g)
+        return perlin_anomaly(img, source, g, fg=fg)
     if kind == "cutpaste":
-        return cutpaste_anomaly(img, g)
+        return cutpaste_anomaly(img, g, fg=fg)
     if kind == "mixed":
-        return synthesize(img, source, "perlin" if torch.rand(1, generator=g).item() < 0.5 else "cutpaste", g)
+        kind = "perlin" if torch.rand(1, generator=g).item() < 0.5 else "cutpaste"
+        return synthesize(img, source, kind, g, fg)
     raise ValueError(f"unknown synthetic anomaly kind: {kind}")
 
 

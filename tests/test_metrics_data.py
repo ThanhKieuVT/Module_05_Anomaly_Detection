@@ -54,6 +54,23 @@ def test_synthetic_anomalies_and_patch_labels():
     assert lab.shape == (1, 64) and (lab == 1).any() and (lab == 0).any()
 
 
+def test_synthetic_anomalies_stay_on_foreground():
+    img = torch.rand(3, 112, 112)
+    fg = torch.zeros(112, 112)
+    fg[30:80, 40:90] = 1
+    for kind in ("perlin", "cutpaste"):
+        for seed in range(5):
+            g = torch.Generator().manual_seed(seed)
+            out, mask = synthesize(img, img.flip(-1), kind, g, fg)
+            assert mask.any()
+            if kind == "perlin":
+                assert not (mask * (1 - fg)).any()
+                assert torch.equal(out * (1 - fg), img * (1 - fg))
+            else:  # the rectangle is centred on the object
+                ys, xs = torch.nonzero(mask, as_tuple=True)
+                assert fg[(ys.min() + ys.max()) // 2, (xs.min() + xs.max()) // 2]
+
+
 def test_loss_separates_normal_and_anomalous():
     torch.manual_seed(0)
     feats = torch.randn(4, 16, 8, requires_grad=True)

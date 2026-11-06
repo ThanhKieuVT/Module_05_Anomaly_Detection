@@ -29,7 +29,3 @@ def pool(names: list[str]) -> list[str]:
     """Distinct views of one shot: identity first, then the configured augmentations."""
     return ["identity"] + [n for n in dict.fromkeys(names) if n != "identity"]
 
-
-def random_view(img: torch.Tensor, names: list[str], g: torch.Generator) -> torch.Tensor:
-    views = pool(names)
-    return apply(img, views[int(torch.randint(len(views), (1,), generator=g))])
