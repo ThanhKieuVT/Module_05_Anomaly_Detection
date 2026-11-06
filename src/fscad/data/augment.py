@@ -28,4 +28,3 @@ def expand(images: torch.Tensor, names: list[str]) -> torch.Tensor:
 def pool(names: list[str]) -> list[str]:
     """Distinct views of one shot: identity first, then the configured augmentations."""
     return ["identity"] + [n for n in dict.fromkeys(names) if n != "identity"]
-
