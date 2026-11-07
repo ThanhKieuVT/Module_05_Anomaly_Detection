@@ -19,7 +19,14 @@ import numpy as np
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 
-from fscad.pipeline import artifact_path, evaluate_product, fit_from_split, resolve_classes, setup
+from fscad.pipeline import (
+    artifact_path,
+    evaluate_product,
+    fit_from_split,
+    resolve_classes,
+    save_checkpoint,
+    setup,
+)
 from fscad.product import ProductModel
 from fscad.tracking import Tracker
 from fscad.utils import seed_everything
@@ -47,14 +54,13 @@ def run(cfg: DictConfig) -> list[dict]:
                 f"{cfg.method}-{dataset}-{cls}-k{cfg.shots}-s{seed}",
                 tags,
                 params=OmegaConf.to_container(cfg, resolve=True),
-            ):
+            ) as mlrun:
                 apath = artifact_path(cfg, dataset, cls, cfg.shots, seed)
-                if cfg.reuse_artifacts and apath.exists():
+                reused = cfg.reuse_artifacts and apath.exists()
+                if reused:
                     product = ProductModel.load(apath, device)
                 else:
                     product = fit_from_split(cfg, backbone, device, dataset, cls, cfg.shots, seed, tracker)
-                    if cfg.save_artifacts:
-                        product.save(apath)
                 metrics = evaluate_product(cfg, backbone, device, product, dataset, cls)
                 metrics.update(
                     {
@@ -65,6 +71,8 @@ def run(cfg: DictConfig) -> list[dict]:
                 )
                 metrics["mb_per_class"] = product.nbytes() / 2**20
                 tracker.log_metrics(metrics)
+                if cfg.save_artifacts and not reused:  # saved after evaluation so it carries its metrics
+                    save_checkpoint(product, apath, cfg, tracker, mlrun, metrics)
             row = {**tags, **metrics}
             rows.append(row)
             log.info(

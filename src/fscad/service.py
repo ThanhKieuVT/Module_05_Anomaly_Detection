@@ -24,6 +24,7 @@ from fscad.models.backbone import build_backbone
 from fscad.models.router import PrototypeRouter
 from fscad.monitoring import DriftMonitor
 from fscad.product import ProductModel, activate, fit_product
+from fscad.scoring.masking import foreground_mask
 from fscad.scoring.scoring import anomaly_map, image_score
 from fscad.utils import get_device, sync
 
@@ -130,7 +131,8 @@ class AnomalyService:
             t0 = time.perf_counter()
             x = normalize(image[None].to(self.device))
             h, grid = self.backbone.forward_prefix(x)
-            cls = self.backbone.forward_suffix(h, adapted=False)[:, 0]
+            frozen = self.backbone.forward_suffix(h, adapted=False)
+            cls = frozen[:, 0]
             rr = self.router.route(cls.cpu())
             tick("route", t0)
             sim, best, rejected = float(rr.similarity[0]), rr.best[0], bool(rr.rejected[0])
@@ -147,6 +149,9 @@ class AnomalyService:
             tokens = self.backbone.forward_suffix(h, adapted=True)
             patches = tokens[:, self.backbone.n_prefix :]
             d = p.memory.query(patches)
+            if p.meta.get("masking"):  # same scoring as fscad.product.score_product
+                fg = foreground_mask(frozen[:, self.backbone.n_prefix :], grid)
+                d = d * fg.to(d.device, d.dtype)
             score = float(image_score(d, self.cfg.eval.image_score, self.cfg.eval.top_q)[0])
             amap = None
             if return_map:
@@ -170,14 +175,20 @@ class AnomalyService:
         )
 
     # ------------------------------------------------------------------ onboarding
-    def onboard(self, name: str, shots: torch.Tensor, val: torch.Tensor | None = None) -> dict:
-        """Register a new product from a few normal images (B, 3, H, W) in [0, 1]."""
+    def onboard(
+        self, name: str, shots: torch.Tensor, val: torch.Tensor | None = None, masking: bool = False
+    ) -> dict:
+        """Register a new product from a few normal images (B, 3, H, W) in [0, 1].
+
+        ``masking`` scores only foreground patches (AnomalyDINO); use it for objects on a background
+        that may carry dust or texture, not for textures that fill the image.
+        """
         cfg = OmegaConf.merge(self.cfg, {"train": {"steps": self.cfg.onboard_steps}})
         t0 = time.perf_counter()
         with self.lock:
             if val is None or len(val) == 0:  # no extra images: reuse the shots for the threshold
                 val = shots
-            p = fit_product(name, self.backbone, shots, cfg, self.device, val_images=val)
+            p = fit_product(name, self.backbone, shots, cfg, self.device, val_images=val, masking=masking)
             p.memory.to("cpu")
             path = p.save(self.dir / product_id(name) / "model.pt")
             (path.parent / "meta.json").write_text(

@@ -1,0 +1,41 @@
+{
+  "dataset": "visa",
+  "class": "cashew",
+  "shots": 1,
+  "seed": 2,
+  "train": [
+    "cashew/Data/Images/Normal/116.JPG"
+  ],
+  "val": [
+    "cashew/Data/Images/Normal/000.JPG",
+    "cashew/Data/Images/Normal/001.JPG",
+    "cashew/Data/Images/Normal/002.JPG",
+    "cashew/Data/Images/Normal/003.JPG",
+    "cashew/Data/Images/Normal/004.JPG",
+    "cashew/Data/Images/Normal/005.JPG",
+    "cashew/Data/Images/Normal/007.JPG",
+    "cashew/Data/Images/Normal/008.JPG",
+    "cashew/Data/Images/Normal/009.JPG",
+    "cashew/Data/Images/Normal/010.JPG",
+    "cashew/Data/Images/Normal/011.JPG",
+    "cashew/Data/Images/Normal/014.JPG",
+    "cashew/Data/Images/Normal/015.JPG",
+    "cashew/Data/Images/Normal/016.JPG",
+    "cashew/Data/Images/Normal/017.JPG",
+    "cashew/Data/Images/Normal/018.JPG",
+    "cashew/Data/Images/Normal/019.JPG",
+    "cashew/Data/Images/Normal/020.JPG",
+    "cashew/Data/Images/Normal/021.JPG",
+    "cashew/Data/Images/Normal/022.JPG",
+    "cashew/Data/Images/Normal/024.JPG",
+    "cashew/Data/Images/Normal/025.JPG",
+    "cashew/Data/Images/Normal/026.JPG",
+    "cashew/Data/Images/Normal/027.JPG",
+    "cashew/Data/Images/Normal/028.JPG",
+    "cashew/Data/Images/Normal/029.JPG",
+    "cashew/Data/Images/Normal/030.JPG",
+    "cashew/Data/Images/Normal/031.JPG",
+    "cashew/Data/Images/Normal/032.JPG",
+    "cashew/Data/Images/Normal/033.JPG"
+  ]
+}

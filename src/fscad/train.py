@@ -13,7 +13,7 @@ import logging
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
-from fscad.pipeline import artifact_path, fit_from_split, resolve_classes, setup
+from fscad.pipeline import artifact_path, fit_from_split, resolve_classes, save_checkpoint, setup
 from fscad.tracking import Tracker
 from fscad.utils import seed_everything
 
@@ -41,9 +41,11 @@ def main(cfg: DictConfig) -> None:
                 f"train-{dataset}-{cls}-k{cfg.shots}-s{seed}",
                 tags,
                 params=OmegaConf.to_container(cfg, resolve=True),
-            ):
+            ) as mlrun:
                 product = fit_from_split(cfg, backbone, device, dataset, cls, cfg.shots, seed, tracker)
-                path = product.save(artifact_path(cfg, dataset, cls, cfg.shots, seed))
+                path = save_checkpoint(
+                    product, artifact_path(cfg, dataset, cls, cfg.shots, seed), cfg, tracker, mlrun
+                )
                 tracker.log_metrics({k: v for k, v in product.meta.items() if isinstance(v, int | float)})
                 tracker.log_artifact(path)
             log.info(

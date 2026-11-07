@@ -131,6 +131,31 @@ bash scripts/run_baselines.sh mvtec_ad     # AnomalyDINO + PatchCore on our spli
 `scripts/build_fewshot_view.py` builds a symlinked MVTec-layout folder containing exactly the K
 shots of a split, so the official code uses the same images as our runs.
 
+## Checkpoints and inference
+
+Vietnamese handover guide (setup, training, reproduction, checkpoints, inference): [docs/HUONG_DAN.md](docs/HUONG_DAN.md).
+
+Every evaluated product is saved to
+`artifacts/<run_name>/<config fingerprint>/<dataset>/<class>/k<K>_s<seed>.pt`; the fingerprint is a
+hash of the product configuration, so different configurations never overwrite each other. The
+checkpoint's `meta` holds the config, git commit, MLflow run id and metrics, and the MLflow run is
+tagged with the checkpoint path and sha256.
+
+```bash
+# collect the checkpoints of the official runs (final=true, current config) into serving bundles
+python scripts/export_checkpoints.py dataset=visa method=lora shots=4 'seeds=[0,1,2]' +export.out=checkpoints
+#   -> checkpoints/visa-lora-k4-s<seed>/<product>/model.pt + checkpoints/manifest.json (sha256, run, metrics)
+
+# inference from the command line: routing, score, threshold, decision, heatmaps -> predictions.csv
+python scripts/predict.py --products checkpoints/visa-lora-k4-s0 --out outputs/predict path/to/images/
+
+# or serve a bundle
+FSCAD_PRODUCTS_DIR=checkpoints/visa-lora-k4-s0 uvicorn serving.app:app --port 8000
+```
+
+The service and `predict.py` score exactly like the evaluation (background masking included), so
+the stored threshold applies; `tests/test_pipeline.py::test_service_scores_like_evaluation` checks it.
+
 ## Demo (no download)
 
 ```bash

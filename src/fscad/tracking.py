@@ -78,6 +78,10 @@ class Tracker:
             clean = {k: float(v) for k, v in metrics.items() if v is not None and v == v}
             mlflow.log_metrics(clean, step=step)
 
+    def set_tags(self, tags: dict) -> None:
+        if self.enabled:
+            mlflow.set_tags({k: str(v) for k, v in tags.items()})
+
     def log_dict(self, d: dict, name: str) -> None:
         if self.enabled:
             with tempfile.TemporaryDirectory() as tmp:

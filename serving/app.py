@@ -150,12 +150,13 @@ async def onboard(
     name: str = Form(...),
     files: list[UploadFile] = File(...),
     val_files: list[UploadFile] | None = File(None),
+    masking: bool = Form(False),
 ) -> dict:
     s = service()
     size = s.cfg.model.img_size
     shots = torch.stack([read_image(await f.read(), size) for f in files])
     val = torch.stack([read_image(await f.read(), size) for f in val_files]) if val_files else None
-    res = s.onboard(name, shots, val)
+    res = s.onboard(name, shots, val, masking=masking)
     ONBOARD.observe(res["seconds"])
     N_PRODUCTS.set(len(s.router))
     return res

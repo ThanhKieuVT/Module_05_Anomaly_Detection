@@ -15,7 +15,8 @@ stages:
         - scripts/make_splits.py
         - src/fscad/data/splits.py
       outs:
-        - splits/${item}
+        - splits/${item}:
+            cache: false      # small JSON lists of image paths, versioned in git for exact reproduction
 
   train:
     foreach: [mvtec_ad, visa]

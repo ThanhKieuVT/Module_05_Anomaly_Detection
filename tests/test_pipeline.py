@@ -24,6 +24,20 @@ def test_evaluate_lora_and_knn(toy_root, tmp_path):
     assert len(art) == 2
     p = ProductModel.load(art[0])
     assert len(p.memory) > 0 and p.score_threshold is not None and p.val_cls is not None
+    # provenance: config, fingerprint and the metrics of the run that produced the checkpoint
+    assert p.meta["config"]["method"] in ("lora", "knn") and "i_auroc" in p.meta["metrics"]
+    assert p.meta["fingerprint"] in str(art[0])
+
+
+def test_checkpoints_of_different_configs_do_not_collide(toy_root, tmp_path):
+    from fscad.pipeline import artifact_path, config_fingerprint
+
+    a = make_cfg(toy_root, tmp_path, "method=lora")
+    b = make_cfg(toy_root, tmp_path, "method=lora", "train.lr=0.001")
+    c = make_cfg(toy_root, tmp_path, "method=lora", "seeds=[5]")  # not part of the product config
+    assert config_fingerprint(a) != config_fingerprint(b)
+    assert config_fingerprint(a) == config_fingerprint(c)
+    assert artifact_path(a, "toy", "alpha", 2, 0) != artifact_path(b, "toy", "alpha", 2, 0)
 
 
 def test_continual_with_holdout(toy_root, tmp_path):
@@ -107,6 +121,30 @@ def test_service_onboard_and_predict(toy_root, tmp_path):
     assert svc.drift()["alpha"]["n"] == 4
     # a fresh service sees the products saved on disk
     assert sorted(AnomalyService(serve).router.classes) == ["alpha", "beta"]
+
+
+def test_service_scores_like_evaluation(toy_root, tmp_path):
+    """The API must score exactly like fscad.product.score_product, which set the threshold."""
+    from fscad.product import score_product
+    from fscad.service import AnomalyService
+
+    cfg = make_cfg(toy_root, tmp_path)
+    OmegaConf.set_struct(cfg, False)
+    serve = OmegaConf.merge(
+        cfg, {"products_dir": str(tmp_path / "serving"), "cache_size": 2, "onboard_steps": 2}
+    )
+    svc = AnomalyService(serve)
+    root = toy_root / "toy"
+    shots = load_images([str(p) for p in sorted((root / "alpha/train/good").glob("*.png"))[:2]], 112)
+    imgs = load_images([str(p) for p in sorted((root / "alpha/test/defect").glob("*.png"))[:2]], 112)
+    for masking in (False, True):
+        name = f"alpha_mask{int(masking)}"
+        svc.onboard(name, shots, masking=masking)
+        product, _ = svc._get(name)
+        assert product.meta["masking"] is masking
+        ref, _ = score_product(svc.backbone, product, imgs, serve, svc.device, with_maps=False)
+        got = [svc.predict(x, product=name).score for x in imgs]
+        assert np.allclose(got, ref, atol=1e-5)
 
 
 def test_api(toy_root, tmp_path, monkeypatch):

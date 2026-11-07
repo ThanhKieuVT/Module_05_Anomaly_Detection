@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import numpy as np
 import torch
+from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 
 from fscad.data.datasets import ADDataset, dataset_classes, list_samples, load_image
@@ -32,8 +35,54 @@ def load_images(paths: list[str], size: int) -> torch.Tensor:
     return torch.stack([load_image(p, size) for p in paths]) if paths else torch.empty(0, 3, size, size)
 
 
+def product_config(cfg) -> dict:
+    """The part of the config that determines a fitted product (adapter, memory bank, threshold)."""
+    c = OmegaConf.to_container(cfg, resolve=True)
+    out = {k: c.get(k) for k in ("method", "model", "memory")}
+    out["eval"] = {k: c["eval"].get(k) for k in ("image_score", "top_q", "threshold_quantile", "masking")}
+    if c.get("method") == "lora":
+        out["lora"], out["train"] = c.get("lora"), c.get("train")
+    return out
+
+
+def config_fingerprint(cfg) -> str:
+    return hashlib.sha1(json.dumps(product_config(cfg), sort_keys=True, default=str).encode()).hexdigest()[:8]
+
+
 def artifact_path(cfg, dataset: str, cls: str, shots: int, seed: int) -> Path:
-    return Path(cfg.paths.artifacts_dir) / cfg.run_name / dataset / cls / f"k{shots}_s{seed}.pt"
+    """``<artifacts_dir>/<run_name>/<config fingerprint>/<dataset>/<cls>/k<K>_s<seed>.pt``.
+
+    The fingerprint keeps checkpoints of different configurations (e.g. two learning rates under
+    the same run name) from overwriting each other.
+    """
+    root = Path(cfg.paths.artifacts_dir) / cfg.run_name / config_fingerprint(cfg)
+    return root / dataset / cls / f"k{shots}_s{seed}.pt"
+
+
+def file_sha256(path: str | Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def save_checkpoint(product: ProductModel, path: Path, cfg, tracker=None, run=None, metrics=None) -> Path:
+    """Save a product with its provenance (commit, config, MLflow run, metrics) in ``meta``."""
+    product.meta.update(
+        {
+            "config": product_config(cfg),
+            "fingerprint": config_fingerprint(cfg),
+            "git_commit": getattr(tracker, "commit", None),
+            "mlflow_run_id": run.info.run_id if run is not None else None,
+        }
+    )
+    if metrics:
+        product.meta["metrics"] = {k: float(v) for k, v in metrics.items() if isinstance(v, int | float)}
+    path = product.save(path)
+    if tracker is not None:
+        tracker.set_tags({"checkpoint": str(path), "checkpoint_sha256": file_sha256(path)})
+    return path
 
 
 def setup(cfg) -> tuple[DinoBackbone, torch.device]:
@@ -107,6 +156,10 @@ def evaluate_product(cfg, backbone, device, product: ProductModel, dataset: str,
 
 __all__ = [
     "artifact_path",
+    "config_fingerprint",
+    "file_sha256",
+    "product_config",
+    "save_checkpoint",
     "dataset_root",
     "evaluate_product",
     "fit_from_split",

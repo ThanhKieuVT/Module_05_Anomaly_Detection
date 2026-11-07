@@ -1,0 +1,41 @@
+{
+  "dataset": "visa",
+  "class": "pcb2",
+  "shots": 1,
+  "seed": 1,
+  "train": [
+    "pcb2/Data/Images/Normal/0752.JPG"
+  ],
+  "val": [
+    "pcb2/Data/Images/Normal/0000.JPG",
+    "pcb2/Data/Images/Normal/0001.JPG",
+    "pcb2/Data/Images/Normal/0002.JPG",
+    "pcb2/Data/Images/Normal/0003.JPG",
+    "pcb2/Data/Images/Normal/0004.JPG",
+    "pcb2/Data/Images/Normal/0005.JPG",
+    "pcb2/Data/Images/Normal/0006.JPG",
+    "pcb2/Data/Images/Normal/0007.JPG",
+    "pcb2/Data/Images/Normal/0008.JPG",
+    "pcb2/Data/Images/Normal/0009.JPG",
+    "pcb2/Data/Images/Normal/0010.JPG",
+    "pcb2/Data/Images/Normal/0012.JPG",
+    "pcb2/Data/Images/Normal/0014.JPG",
+    "pcb2/Data/Images/Normal/0015.JPG",
+    "pcb2/Data/Images/Normal/0017.JPG",
+    "pcb2/Data/Images/Normal/0018.JPG",
+    "pcb2/Data/Images/Normal/0019.JPG",
+    "pcb2/Data/Images/Normal/0020.JPG",
+    "pcb2/Data/Images/Normal/0021.JPG",
+    "pcb2/Data/Images/Normal/0022.JPG",
+    "pcb2/Data/Images/Normal/0023.JPG",
+    "pcb2/Data/Images/Normal/0025.JPG",
+    "pcb2/Data/Images/Normal/0028.JPG",
+    "pcb2/Data/Images/Normal/0029.JPG",
+    "pcb2/Data/Images/Normal/0030.JPG",
+    "pcb2/Data/Images/Normal/0031.JPG",
+    "pcb2/Data/Images/Normal/0032.JPG",
+    "pcb2/Data/Images/Normal/0033.JPG",
+    "pcb2/Data/Images/Normal/0034.JPG",
+    "pcb2/Data/Images/Normal/0035.JPG"
+  ]
+}
