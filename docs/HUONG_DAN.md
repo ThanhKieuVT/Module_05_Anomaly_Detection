@@ -169,6 +169,28 @@ Mỗi file `.pt` là một sản phẩm đã đăng ký (`fscad.product.ProductM
 Đường dẫn chứa `fingerprint` (8 ký tự đầu của mã băm cấu hình), nên hai cấu hình khác nhau (ví dụ hai
 learning rate) không bao giờ ghi đè checkpoint của nhau.
 
+### Tải bộ checkpoint đã huấn luyện (không cần train lại)
+
+Checkpoint của các run chính thức trên VisA đã được xuất sẵn và lưu trên Google Drive:
+<https://drive.google.com/drive/folders/1ajZUBnxbVLf8y5SgEQj1ndRs8cVp-QYG>
+(người nhận cần được chia sẻ quyền xem thư mục này).
+
+* `visa-<knn|lora>-k<1|4|16>-s<0|1|2>/`: các bundle, cấu trúc như mục dưới; `manifest.json` liệt kê
+  từng file kèm sha256, run MLflow và thước đo.
+* `_ablation_raw/`: checkpoint gốc của các thử nghiệm chọn cấu hình trên pcb (bảng (A)–(E) của báo cáo),
+  giữ nguyên đường dẫn trong `artifacts/`. Không dùng cho inference.
+
+Tải về thư mục `checkpoints/` của repo (thư mục này đã nằm trong `.gitignore`): tải thư mục trên giao
+diện web, hoặc bằng `rclone` (sau khi `rclone config` tạo remote Google Drive tên `gdrive`):
+
+```bash
+rclone copy gdrive: checkpoints --drive-root-folder-id 1ajZUBnxbVLf8y5SgEQj1ndRs8cVp-QYG \
+    --exclude "_ablation_raw/**"
+```
+
+`make_report_assets.py` đọc hình so sánh kNN/LoRA trên macaroni2 từ `checkpoints/` (đổi bằng
+`--checkpoints`).
+
 ### Xuất bộ checkpoint chính thức
 
 ```bash

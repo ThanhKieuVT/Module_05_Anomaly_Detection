@@ -11,6 +11,7 @@ __pycache__/
 !/data/.gitkeep
 /data_views/
 /artifacts/
+/checkpoints/
 /outputs/
 /multirun/
 /results/

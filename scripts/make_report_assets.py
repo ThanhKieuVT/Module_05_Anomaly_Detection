@@ -15,7 +15,8 @@ Writes PNGs plus ``assets.json`` with the exact image files used, so every capti
                        LoRA): tokens, mask, nearest memory patches, anomaly map, score vs delta
 * pipeline_route.png   CLS similarity of three images to the registered products and tau
 * compare_macaroni2.png  kNN and LoRA anomaly maps on the same macaroni2 test images, from the
-                       products saved by the seed-2 evaluation run (artifacts/), not refitted
+                       products saved by the seed-2 evaluation run, read from the exported bundles
+                       (--checkpoints, see docs/HUONG_DAN.md for the download), not refitted
 
 These illustrate inputs and the mechanics of the code on single images; they are not results.
 """
@@ -416,7 +417,7 @@ def pipeline_route(out: Path, cfg, backbone, device, inputs: list[tuple[str, Pat
 
 
 @torch.no_grad()
-def compare_maps(out: Path, cls: str, seed: int, names: list[str]) -> dict:
+def compare_maps(out: Path, ckpts: Path, cls: str, seed: int, names: list[str]) -> dict:
     """Saved kNN and LoRA products of one split, scored on the same test images.
 
     Each method's maps share one colour scale (0 to the 99.5% quantile over the whole test set), so
@@ -428,9 +429,7 @@ def compare_maps(out: Path, cls: str, seed: int, names: list[str]) -> dict:
         )
     backbone, device = setup(cfg)
     prods = {
-        m: ProductModel.load(
-            ROOT / "artifacts" / f"{m}_dinov2_vits14_r8_L4" / "visa" / cls / f"k4_s{seed}.pt", device
-        )
+        m: ProductModel.load(ckpts / f"visa-{m}-k4-s{seed}" / f"visa__{cls}" / "model.pt", device)
         for m in ("knn", "lora")
     }
     test = list_samples("visa", DATA, cls, "test")
@@ -499,6 +498,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="outputs/report_assets")
     ap.add_argument("--splits-dir", default=str(ROOT / "splits"))
+    ap.add_argument("--checkpoints", default=str(ROOT / "checkpoints"), help="exported bundles")
     a = ap.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -530,7 +530,7 @@ def main() -> None:
         ],
     )
     assets["compare_macaroni2"] = compare_maps(
-        out, "macaroni2", 2, ["027.JPG", "071.JPG", "028.JPG", "0648.JPG"]
+        out, Path(a.checkpoints), "macaroni2", 2, ["027.JPG", "071.JPG", "028.JPG", "0648.JPG"]
     )
     (out / "assets.json").write_text(json.dumps(assets, indent=2, ensure_ascii=False))
     print(json.dumps(assets, indent=2, ensure_ascii=False))
