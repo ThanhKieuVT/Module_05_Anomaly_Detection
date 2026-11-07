@@ -14,6 +14,8 @@ Writes PNGs plus ``assets.json`` with the exact image files used, so every capti
 * pipeline_detect.png  one defective image through the inference path of the code (frozen kNN, no
                        LoRA): tokens, mask, nearest memory patches, anomaly map, score vs delta
 * pipeline_route.png   CLS similarity of three images to the registered products and tau
+* compare_macaroni2.png  kNN and LoRA anomaly maps on the same macaroni2 test images, from the
+                       products saved by the seed-2 evaluation run (artifacts/), not refitted
 
 These illustrate inputs and the mechanics of the code on single images; they are not results.
 """
@@ -37,9 +39,10 @@ from fscad.data.augment import pool  # noqa: E402
 from fscad.data.datasets import list_samples, load_image, load_mask, normalize  # noqa: E402
 from fscad.data.splits import load_split  # noqa: E402
 from fscad.data.synthetic import synthesize  # noqa: E402
+from fscad.metrics import all_metrics  # noqa: E402
 from fscad.models.router import PrototypeRouter  # noqa: E402
 from fscad.pipeline import fit_from_split, load_images, setup  # noqa: E402
-from fscad.product import score_product, view_foregrounds  # noqa: E402
+from fscad.product import ProductModel, score_product, view_foregrounds  # noqa: E402
 from fscad.scoring.masking import foreground_mask  # noqa: E402
 from fscad.scoring.scoring import anomaly_map  # noqa: E402
 
@@ -413,6 +416,67 @@ def pipeline_route(out: Path, cfg, backbone, device, inputs: list[tuple[str, Pat
 
 
 @torch.no_grad()
+def compare_maps(out: Path, cls: str, seed: int, names: list[str]) -> dict:
+    """Saved kNN and LoRA products of one split, scored on the same test images.
+
+    Each method's maps share one colour scale (0 to the 99.5% quantile over the whole test set), so
+    colours are comparable within a column, and every title gives the score against that method's delta.
+    """
+    with initialize_config_dir(config_dir=str(ROOT / "configs"), version_base="1.3"):
+        cfg = compose(
+            config_name="config", overrides=["method=lora", "tracking.enabled=false", "dataset=visa"]
+        )
+    backbone, device = setup(cfg)
+    prods = {
+        m: ProductModel.load(
+            ROOT / "artifacts" / f"{m}_dinov2_vits14_r8_L4" / "visa" / cls / f"k4_s{seed}.pt", device
+        )
+        for m in ("knn", "lora")
+    }
+    test = list_samples("visa", DATA, cls, "test")
+    allx = load_images([s_.path for s_ in test], SIZE)
+    res = {}
+    for m, prod in prods.items():
+        sc, mp = score_product(backbone, prod, allx, cfg, device, with_maps=True, map_size=SIZE)
+        res[m] = (sc, mp, float(np.quantile(mp, 0.995)), prod.score_threshold)
+    idx = [next(i for i, s_ in enumerate(test) if Path(s_.path).name == n) for n in names]
+    fig, axes = plt.subplots(len(idx), 3, figsize=(7.4, 2.55 * len(idx)))
+    used = []
+    for r, i in enumerate(idx):
+        s_ = test[i]
+        im = allx[i].permute(1, 2, 0).numpy()
+        gt = load_mask(s_.mask, SIZE).numpy()
+        kind = "lỗi" if s_.label else "tốt"
+        axes[r, 0].imshow(im)
+        if gt.any():
+            axes[r, 0].contour(gt, levels=[0.5], colors="lime", linewidths=1.2)
+        off(axes[r, 0], f"{Path(s_.path).name} ({kind})")
+        row = {"image": rel(s_.path), "label": int(s_.label)}
+        for j, m in enumerate(("knn", "lora"), start=1):
+            sc, mp, vmax, thr = res[m]
+            axes[r, j].imshow(im)
+            axes[r, j].imshow(mp[i], cmap="jet", alpha=0.45, vmin=0, vmax=vmax)
+            if gt.any():
+                axes[r, j].contour(gt, levels=[0.5], colors="white", linewidths=0.8)
+            flag = "báo lỗi" if sc[i] > thr else "cho qua"
+            off(axes[r, j], f"{'kNN' if m == 'knn' else 'LoRA'}: S = {sc[i]:.3f}, δ = {thr:.3f} → {flag}")
+            row[m] = {"score": round(float(sc[i]), 4), "delta": round(float(thr), 4)}
+        used.append(row)
+    fig.tight_layout()
+    fig.savefig(out / f"compare_{cls}.png", dpi=150)
+    plt.close(fig)
+    labels = np.array([s_.label for s_ in test])
+    return {
+        "seed": seed,
+        "images": used,
+        **{
+            f"i_auroc_{m}": round(all_metrics(labels, res[m][0], None, None, pixel=False)["i_auroc"], 4)
+            for m in res
+        },
+    }
+
+
+@torch.no_grad()
 def masking(out: Path, used: dict, backbone, device) -> dict:
     paths = [DATA / used[c]["anomaly"] for c in ("pcb1", "macaroni2", "capsules")]
     x = torch.stack([load_image(p, SIZE) for p in paths])
@@ -464,6 +528,9 @@ def main() -> None:
             ("chưa đăng ký, giống", Path(test("pcb4", 0))),
             ("chưa đăng ký, khác", Path(test("candle", 0))),
         ],
+    )
+    assets["compare_macaroni2"] = compare_maps(
+        out, "macaroni2", 2, ["027.JPG", "071.JPG", "028.JPG", "0648.JPG"]
     )
     (out / "assets.json").write_text(json.dumps(assets, indent=2, ensure_ascii=False))
     print(json.dumps(assets, indent=2, ensure_ascii=False))
