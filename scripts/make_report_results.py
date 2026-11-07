@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 
 import matplotlib
@@ -282,6 +283,8 @@ def main() -> None:
         "dev": dev_table(df),
         "ops": ops_table(df, m),
     }.items():
+        # Vietnamese decimal comma in the report: 91.2 -> 91{,}2
+        tex = re.sub(r"(\d)\.(\d)", r"\1{,}\2", tex)
         (out / "tables" / f"res_{name}.tex").write_text(tex + "\n")
         res[name] = data
     delta_figure(m, out / "figures" / "res_delta.png")
