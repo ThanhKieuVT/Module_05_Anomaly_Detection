@@ -185,7 +185,16 @@ diện web, hoặc bằng `rclone` (sau khi `rclone config` tạo remote Google 
 
 ```bash
 rclone copy gdrive: checkpoints --drive-root-folder-id 1ajZUBnxbVLf8y5SgEQj1ndRs8cVp-QYG \
-    --exclude "_ablation_raw/**"
+    --exclude "_ablation_raw/**" --exclude "data/**"
+```
+
+Thư mục `data/` trên cùng Drive chứa dữ liệu dùng trong thí nghiệm: `visa.tar` (VisA, 12 lớp, giấy phép
+CC BY 4.0, nguồn https://github.com/amazon-science/spot-diff) và `splits.tar.gz` (các split cố định).
+Giải nén trong repo:
+
+```bash
+rclone copy gdrive:data . --drive-root-folder-id 1ajZUBnxbVLf8y5SgEQj1ndRs8cVp-QYG
+tar -xf visa.tar -C data && tar -xzf splits.tar.gz
 ```
 
 `make_report_assets.py` đọc hình so sánh kNN/LoRA trên macaroni2 từ `checkpoints/` (đổi bằng
