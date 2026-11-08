@@ -166,7 +166,7 @@ def synthetic(out: Path, shots: list[str], backbone, device) -> dict:
     axes[0, 0].imshow(x.permute(1, 2, 0))
     off(axes[0, 0], f"shot gốc\n{Path(shots[0]).name}", fs=10)
     axes[1, 0].imshow(fg, cmap="gray")
-    off(axes[1, 0], "mặt nạ vật thể\ntừ token đóng băng", fs=10)
+    off(axes[1, 0], "foreground mask\ntừ token frozen", fs=10)
     used = []
     for j, (kind, m_fg, title) in enumerate(cols, start=1):
         g = torch.Generator().manual_seed(4 if kind == "perlin" else 5)
@@ -176,7 +176,7 @@ def synthetic(out: Path, shots: list[str], backbone, device) -> dict:
         off(axes[0, j], title, fs=10)
         axes[1, j].imshow(m, cmap="gray")
         on_obj = float((m * fg).sum() / m.sum().clamp(min=1))
-        off(axes[1, j], f"mask lỗi\n{on_obj:.0%} nằm trên vật thể", fs=10)
+        off(axes[1, j], f"anomaly mask\n{on_obj:.0%} nằm trên vật thể", fs=10)
         used.append({"kind": kind, "foreground": m_fg is not None, "on_object": round(on_obj, 3)})
     fig.tight_layout(h_pad=2.2)
     save(fig, out / "synthetic.png", dpi=150)
@@ -327,26 +327,26 @@ def pipeline_detect(out: Path, cfg, backbone, device, cls: str = "pcb1") -> dict
     ax = axes[0, 2]
     keep = np.kron(fg.reshape(grid).float().numpy(), np.ones((grid_px, grid_px)))[..., None]
     ax.imshow(im * (0.25 + 0.75 * keep))
-    off(ax, f"③ mặt nạ vật thể (nền tối):\ngiữ {fg.float().mean():.0%} patch", fs=10)
+    off(ax, f"③ foreground mask (nền tối):\ngiữ {fg.float().mean():.0%} patch", fs=10)
     ax = axes[0, 3]
     tiles = [load_image(p, SIZE).permute(1, 2, 0).numpy() for p in shots]
     ax.imshow(np.vstack([np.hstack(tiles[:2]), np.hstack(tiles[2:])]))
-    off(ax, f"④ bộ nhớ: 4 shot × {len(views)} view\n= {len(product.memory)} patch token", fs=10)
+    off(ax, f"④ memory bank: 4 shot × {len(views)} view\n= {len(product.memory)} patch token", fs=10)
     for col_i, (p, col, tag) in enumerate(((hot, "red", "patch đỏ"), (cold, "cyan", "patch xanh"))):
         view, s, pp = nearest(p)
         ax = axes[1, col_i]
         ax.imshow(augment_apply(load_image(shots[s], SIZE), view).permute(1, 2, 0).numpy())
         box(ax, *divmod(pp, grid[1]), color=col, lw=2)
         vname = {"identity": "gốc", "hflip": "lật ngang", "vflip": "lật dọc"}.get(view, view)
-        off(ax, f"⑤ láng giềng của {tag}:\n{Path(shots[s]).name} {vname}, d = {float(d[p]):.3f}", fs=10)
+        off(ax, f"⑤ nearest neighbor của {tag}:\n{Path(shots[s]).name} {vname}, d = {float(d[p]):.3f}", fs=10)
     ax = axes[1, 2]
     ax.imshow(dm.reshape(grid).numpy(), cmap="jet", interpolation="nearest", vmin=0)
-    off(ax, "⑥ khoảng cách tới bộ nhớ\ncủa từng patch (nền = 0)", fs=10)
+    off(ax, "⑥ khoảng cách tới memory bank\ncủa từng patch (nền = 0)", fs=10)
     ax = axes[1, 3]
     ax.imshow(im)
     ax.imshow(amap, cmap="jet", alpha=0.45, vmin=0)
     ax.contour(gt, levels=[0.5], colors="white", linewidths=0.8)
-    off(ax, f"⑦ bản đồ lỗi, S = {score:.3f} > δ = {thr:.3f}\n→ báo lỗi", fs=10)
+    off(ax, f"⑦ anomaly map, S = {score:.3f} > δ = {thr:.3f}\n→ báo lỗi", fs=10)
     fig.tight_layout()
     save(fig, out / "pipeline_detect.png", dpi=150)
     plt.close(fig)
