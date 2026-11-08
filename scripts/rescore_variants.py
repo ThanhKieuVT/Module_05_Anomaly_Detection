@@ -27,10 +27,10 @@ import torch
 from hydra import compose, initialize_config_dir
 from scipy import ndimage
 
-from fscad.data.datasets import list_samples, normalize
+from fscad.data.datasets import dataset_classes, list_samples, normalize
 from fscad.data.splits import load_split
 from fscad.metrics import image_auroc
-from fscad.pipeline import dataset_root, load_images, setup
+from fscad.pipeline import artifact_path, dataset_root, load_images, setup
 from fscad.product import ProductModel, activate
 from fscad.scoring.masking import foreground_mask
 from fscad.scoring.scoring import image_score
@@ -75,9 +75,27 @@ def rates(test: np.ndarray, labels: np.ndarray, thr: float) -> tuple[float, floa
     return float(flag[labels == 0].mean()), float(flag[labels == 1].mean())
 
 
+def products(a, method: str, seed: int) -> list[tuple[str, Path]]:
+    """(class, checkpoint) pairs of one method and seed, from a bundle or from artifacts/."""
+    if not a.from_artifacts:
+        bundle = a.products / f"{a.dataset}-{method}-k{a.shots}-s{seed}"
+        return [(m.parent.name.split("__", 1)[1], m) for m in sorted(bundle.glob("*/model.pt"))]
+    with initialize_config_dir(config_dir=str(ROOT / "configs"), version_base="1.3"):
+        mc = compose(config_name="config", overrides=[f"dataset={a.dataset}", f"method={method}"])
+    out = []
+    for cls in dataset_classes(a.dataset, dataset_root(mc, a.dataset)):
+        m = artifact_path(mc, a.dataset, cls, a.shots, seed)
+        if m.exists():
+            out.append((cls, m))
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--products", type=Path, default=ROOT / "checkpoints")
+    ap.add_argument("--products", type=Path, default=ROOT / "checkpoints", help="directory of bundles")
+    ap.add_argument(
+        "--from-artifacts", action="store_true", help="read the products fscad saved under artifacts/ instead"
+    )
     ap.add_argument("--dataset", default="visa")
     ap.add_argument("--shots", type=int, default=4)
     ap.add_argument("--methods", nargs="+", default=["knn", "lora"])
@@ -97,9 +115,7 @@ def main() -> None:
     root = dataset_root(cfg, a.dataset)
     for method in a.methods:
         for seed in a.seeds:
-            bundle = a.products / f"{a.dataset}-{method}-k{a.shots}-s{seed}"
-            for m in sorted(bundle.glob("*/model.pt")):
-                cls = m.parent.name.split("__", 1)[1]
+            for cls, m in products(a, method, seed):
                 if (a.classes and cls not in a.classes) or (method, seed, cls) in done:
                     continue
                 product = ProductModel.load(m)
