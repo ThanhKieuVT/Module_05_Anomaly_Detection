@@ -208,6 +208,111 @@ def ops_table(df: pd.DataFrame, m: pd.DataFrame) -> tuple[str, dict]:
     return tex, out
 
 
+SHOTS = (1, 4, 16)
+GROUPS = (
+    ("pcb1--4 (dùng để chọn cấu hình)", lambda c: c.isin(PCB)),
+    ("8 lớp còn lại (không dùng để chọn)", lambda c: ~c.isin(PCB)),
+    ("\\quad trong đó bỏ macaroni2", lambda c: ~c.isin(PCB + ["macaroni2"])),
+    ("Cả 12 lớp", lambda c: c == c),
+)
+
+
+def seed_means(m: pd.DataFrame, col: str) -> pd.Series:
+    """Mean over classes within each seed (%), the unit the report's mean +- sd is taken over."""
+    return 100 * m.groupby("seed")[col].mean()
+
+
+def shots_table(df: pd.DataFrame) -> tuple[str, dict]:
+    """LoRA - kNN per class group and number of shots: mean over seeds +- sd over seeds."""
+    rows, out = [], {}
+    for label, sel in GROUPS:
+        cells = []
+        for met in ("i_auroc", "au_pro"):
+            for k in SHOTS:
+                m = paired(df, k)
+                m = m[sel(m.cls)]
+                d = seed_means(m, f"metrics.{met}_b") - seed_means(m, f"metrics.{met}_a")
+                out.setdefault(label, {})[f"{met}_k{k}"] = {
+                    "knn": round(seed_means(m, f"metrics.{met}_a").mean(), 2),
+                    "lora": round(seed_means(m, f"metrics.{met}_b").mean(), 2),
+                    "delta_per_seed": d.round(2).tolist(),
+                }
+                txt = f"{signed(d.mean())} $\\pm$ {d.std(ddof=1):.1f}"
+                cells.append(f"\\textbf{{{txt}}}" if round(d.mean(), 1) >= 1 else txt)
+        rows.append(f"{label} & " + " & ".join(cells) + " \\\\")
+    rows.insert(-1, "\\midrule")
+    head = " & ".join(f"\\textbf{{{k}}}" for k in SHOTS)
+    tex = "\n".join(
+        [
+            "\\begin{tabular}{l ccc ccc}",
+            "\\toprule",
+            "\\headerrowcolor",
+            "& \\multicolumn{3}{c}{\\textbf{$\\Delta$ I-AUROC theo số shot}} & "
+            "\\multicolumn{3}{c}{\\textbf{$\\Delta$ AU-PRO theo số shot}} \\\\",
+            "\\cmidrule(lr){2-4}\\cmidrule(lr){5-7}",
+            f"\\textbf{{Nhóm lớp}} & {head} & {head} \\\\",
+            "\\midrule",
+            *rows,
+            "\\bottomrule",
+            "\\end{tabular}",
+        ]
+    )
+    return tex, out
+
+
+def shots_figure(df: pd.DataFrame, path: Path) -> None:
+    """Mean over 12 classes vs number of shots, kNN and LoRA; one panel per metric (no shared axis)."""
+    fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.3))
+    for ax, (met, name) in zip(axes, (("i_auroc", "I-AUROC (%)"), ("au_pro", "AU-PRO (%)")), strict=True):
+        for side, color, label in (("a", BLUE, "kNN (DINOv2 đóng băng)"), ("b", ORANGE, "LoRA (cấu hình E)")):
+            v = [seed_means(paired(df, k), f"metrics.{met}_{side}") for k in SHOTS]
+            mu, sd = [x.mean() for x in v], [x.std(ddof=1) for x in v]
+            ax.errorbar(
+                SHOTS,
+                mu,
+                yerr=sd,
+                color=color,
+                lw=2,
+                marker="o",
+                ms=6,
+                capsize=3,
+                mec="white",
+                mew=1,
+                zorder=3,
+                label=label,
+            )
+            # value label outside the error bar: LoRA above, kNN below
+            for k, y, e in zip(SHOTS, mu, sd, strict=True):
+                up = side == "b"
+                ax.annotate(
+                    f"{y:.1f}".replace(".", ","),
+                    (k, y + e if up else y - e),
+                    textcoords="offset points",
+                    xytext=(0, 4 if up else -4),
+                    va="bottom" if up else "top",
+                    ha="center",
+                    fontsize=7.5,
+                    color=INK,
+                )
+        ax.set_xscale("log")
+        ax.set_xticks(SHOTS, [str(k) for k in SHOTS])
+        ax.minorticks_off()
+        ax.set_xlim(0.75, 21)
+        ax.set_xlabel("số shot (thang log)", fontsize=8.5)
+        ax.set_title(name, fontsize=9, color=INK, loc="left")
+        ax.tick_params(labelsize=8, colors=INK)
+        ax.grid(axis="y", color=GRID, lw=0.6, zorder=0)
+        for s in ("top", "right"):
+            ax.spines[s].set_visible(False)
+    lo = min(a.get_ylim()[0] for a in axes) - 1  # room for the lowest label
+    for a in axes:
+        a.set_ylim(lo, 98.5)
+    axes[0].legend(loc="lower right", fontsize=7.5, frameon=False)
+    fig.tight_layout()
+    fig.savefig(path, dpi=200)
+    plt.close(fig)
+
+
 def delta_figure(m: pd.DataFrame, path: Path) -> None:
     """Per-class I-AUROC gain of LoRA over kNN: one dot per seed, a bar for the mean."""
     m = m.assign(d=100 * (m["metrics.i_auroc_b"] - m["metrics.i_auroc_a"]))
@@ -282,6 +387,7 @@ def main() -> None:
         "main": main_table(m),
         "dev": dev_table(df),
         "ops": ops_table(df, m),
+        "shots": shots_table(df),
     }.items():
         # Vietnamese decimal comma in the report: 91.2 -> 91{,}2
         tex = re.sub(r"(\d)\.(\d)", r"\1{,}\2", tex)
@@ -289,6 +395,7 @@ def main() -> None:
         res[name] = data
     delta_figure(m, out / "figures" / "res_delta.png")
     seed_figure(df, m, out / "figures" / "res_seeds.png")
+    shots_figure(df, out / "figures" / "res_shots.png")
     res["pairs"] = {"n": len(m), "seeds_per_class": m.groupby("cls").size().to_dict()}
     res["commits"] = df.groupby("config")["tags.git_commit"].unique().apply(sorted).to_dict()
     (out / "results.json").write_text(json.dumps(res, indent=2, ensure_ascii=False, default=str))
