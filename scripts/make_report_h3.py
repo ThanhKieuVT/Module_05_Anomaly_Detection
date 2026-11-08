@@ -131,6 +131,16 @@ def figure(rows: list[dict], summ: list[dict], meta: dict, path: Path) -> None:
             if r["class"] == s["class"] and r["level"] == lv_
         ]
         curves.append(y)
+        if abs(y[-1]) > 2 * 100 * meta["delta"]:  # name the classes that move far from the rest
+            ax.annotate(
+                s["class"],
+                (levels[-1], y[-1]),
+                textcoords="offset points",
+                xytext=(-4, 5),
+                ha="right",
+                fontsize=7,
+                color=INK,
+            )
         ax.plot(levels, y, color=MUTED, lw=0.8, alpha=0.55, zorder=2)
     ax.plot(
         levels,
@@ -162,6 +172,8 @@ def figure(rows: list[dict], summ: list[dict], meta: dict, path: Path) -> None:
     for i, s in enumerate(order):
         a, d = s["alarm_level"], s["drop_level"]
         dd = d if d is not None else top + 0.12
+        if s["false_alarm_clean"]:
+            ax.scatter([0], [i], facecolor="none", edgecolor=AQUA, s=34, lw=1.4, zorder=3)
         if a is not None:
             ax.plot([a, dd], [i, i], color=GRID, lw=2.5, zorder=1, solid_capstyle="round")
             ax.scatter([a], [i], color=AQUA, s=34, zorder=3, edgecolor="white", lw=0.8)
@@ -176,6 +188,7 @@ def figure(rows: list[dict], summ: list[dict], meta: dict, path: Path) -> None:
             marker="o" if d is not None else ">",
         )
     ax.scatter([], [], color=AQUA, s=34, label="monitor cảnh báo")
+    ax.scatter([], [], facecolor="none", edgecolor=AQUA, s=34, lw=1.4, label="cảnh báo cả trên luồng sạch")
     ax.scatter([], [], color=YELLOW, s=34, label=f"I-AUROC giảm $>${100 * meta['delta']:.0f} điểm")
     ax.scatter(
         [], [], color=YELLOW, s=34, marker=">", label=f"không giảm tới mức {top:.1f}".replace(".", ",")
