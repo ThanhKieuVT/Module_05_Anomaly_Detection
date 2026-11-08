@@ -25,15 +25,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+import matplotlib.text  # noqa: E402
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
 from hydra import compose, initialize_config_dir  # noqa: E402
+from matplotlib.ticker import FuncFormatter  # noqa: E402
 
 from fscad.data.augment import apply as augment_apply  # noqa: E402
 from fscad.data.augment import pool  # noqa: E402
@@ -53,6 +56,25 @@ SIZE = 448
 CLASSES = ("pcb1", "macaroni2", "capsules", "candle")
 
 
+def vn(text: str) -> str:
+    """Decimal comma, as in the report's Vietnamese text (0.468 -> 0,468)."""
+    return re.sub(r"(\d)\.(\d)", r"\1,\2", text)
+
+
+def save(fig, path: Path, **kw) -> None:
+    """Save with every number written with a decimal comma, ticks included."""
+    fig.canvas.draw()
+    for ax in fig.axes:
+        for axis in (ax.xaxis, ax.yaxis):
+            f = axis.get_major_formatter()
+            axis.set_major_formatter(FuncFormatter(lambda v, pos, f=f: vn(f(v, pos))))
+    for t in fig.findobj(matplotlib.text.Text):
+        t.set_text(vn(t.get_text()))
+    kw.setdefault("bbox_inches", "tight")
+    kw.setdefault("pad_inches", 0.05)
+    fig.savefig(path, **kw)
+
+
 def rel(p: str | Path) -> str:
     return str(Path(p).relative_to(DATA))
 
@@ -61,11 +83,11 @@ def img(p) -> np.ndarray:
     return load_image(p, SIZE).permute(1, 2, 0).numpy()
 
 
-def off(ax, title=None):
+def off(ax, title=None, fs=11):
     ax.set_xticks([])
     ax.set_yticks([])
     if title:
-        ax.set_title(title, fontsize=8)
+        ax.set_title(title, fontsize=fs)
 
 
 def pick_defect(samples):
@@ -88,7 +110,7 @@ def dataset_samples(out: Path) -> dict:
         off(axes[1, j], f"{cls}: có lỗi\n{Path(bad.path).name}")
         used[cls] = {"normal": rel(good.path), "anomaly": rel(bad.path), "mask": rel(bad.mask)}
     fig.tight_layout()
-    fig.savefig(out / "dataset_samples.png", dpi=150)
+    save(fig, out / "dataset_samples.png", dpi=150)
     plt.close(fig)
     return used
 
@@ -99,12 +121,12 @@ def fewshot(out: Path, splits_dir: Path) -> dict:
     fig, axes = plt.subplots(1, 6, figsize=(12, 2.4))
     for ax, p, tag in zip(axes, shots + val, ["shot"] * 4 + ["validation"] * 2, strict=True):
         ax.imshow(img(p))
-        off(ax, f"{tag}\n{Path(p).name}")
+        off(ax, f"{tag}\n{Path(p).name}", fs=10)
         for s in ax.spines.values():
             s.set_edgecolor("tab:green" if tag == "shot" else "tab:gray")
             s.set_linewidth(2.5)
     fig.tight_layout()
-    fig.savefig(out / "fewshot_pcb1.png", dpi=150)
+    save(fig, out / "fewshot_pcb1.png", dpi=150)
     plt.close(fig)
     return {
         "split": "splits/visa/pcb1/k4_s0.json",
@@ -125,7 +147,7 @@ def vit_patches(out: Path, path: str) -> None:
     ax.set_xlim(-0.5, SIZE - 0.5)
     ax.set_ylim(SIZE - 0.5, -0.5)
     ax.axis("off")
-    fig.savefig(out / "vit_patches.png", dpi=200, bbox_inches="tight", pad_inches=0)
+    save(fig, out / "vit_patches.png", dpi=200, bbox_inches="tight", pad_inches=0)
     plt.close(fig)
 
 
@@ -136,28 +158,28 @@ def synthetic(out: Path, shots: list[str], backbone, device) -> dict:
     src = load_image(shots[1], SIZE)
     fg = view_foregrounds(backbone, x[None], ["identity"], device)[0, 0]
     cols = [
-        ("perlin", None, "Perlin, không mặt nạ\n(trước d3a1313)"),
-        ("perlin", fg, "Perlin, trong vật thể\n(hiện tại)"),
-        ("cutpaste", fg, "CutPaste, tâm trong vật thể\n(hiện tại)"),
+        ("perlin", None, "Perlin trên cả ảnh\n(cách cũ)"),
+        ("perlin", fg, "Perlin trong vật thể\n(đang dùng)"),
+        ("cutpaste", fg, "CutPaste trong vật thể\n(đang dùng)"),
     ]
     fig, axes = plt.subplots(2, 4, figsize=(9.6, 5.4))
     axes[0, 0].imshow(x.permute(1, 2, 0))
-    off(axes[0, 0], f"shot gốc\n{Path(shots[0]).name}")
+    off(axes[0, 0], f"shot gốc\n{Path(shots[0]).name}", fs=10)
     axes[1, 0].imshow(fg, cmap="gray")
-    off(axes[1, 0], "mặt nạ vật thể\n(token đóng băng)")
+    off(axes[1, 0], "mặt nạ vật thể\ntừ token đóng băng", fs=10)
     used = []
     for j, (kind, m_fg, title) in enumerate(cols, start=1):
         g = torch.Generator().manual_seed(4 if kind == "perlin" else 5)
         a, m = synthesize(x.clone(), src, kind, g, m_fg)
         axes[0, j].imshow(a.clamp(0, 1).permute(1, 2, 0))
         axes[0, j].contour(m.numpy(), levels=[0.5], colors="red", linewidths=0.8)
-        off(axes[0, j], title)
+        off(axes[0, j], title, fs=10)
         axes[1, j].imshow(m, cmap="gray")
         on_obj = float((m * fg).sum() / m.sum().clamp(min=1))
-        off(axes[1, j], f"mask lỗi: {on_obj:.0%} nằm trên vật thể")
+        off(axes[1, j], f"mask lỗi\n{on_obj:.0%} nằm trên vật thể", fs=10)
         used.append({"kind": kind, "foreground": m_fg is not None, "on_object": round(on_obj, 3)})
-    fig.tight_layout()
-    fig.savefig(out / "synthetic.png", dpi=150)
+    fig.tight_layout(h_pad=2.2)
+    save(fig, out / "synthetic.png", dpi=150)
     plt.close(fig)
     return {"shot": rel(shots[0]), "texture_source": rel(shots[1]), "panels": used}
 
@@ -218,17 +240,17 @@ def vit_tokens(out: Path, cfg, backbone, device, shots: list[str]) -> dict:
         axes[0].axhline(k - 0.5, color="white", lw=0.3, alpha=0.7)
         axes[0].axvline(k - 0.5, color="white", lw=0.3, alpha=0.7)
     box(axes[0], qr, qc)
-    off(axes[0], f"(a) {Path(a).name}: 32×32 patch 14×14 px\nô đỏ = patch truy vấn")
+    off(axes[0], f"(a) {Path(a).name}, lưới 32×32 patch\nô đỏ: patch truy vấn", fs=10)
     axes[1].imshow(rgb[0], interpolation="nearest")
-    off(axes[1], "(b) 3 thành phần PCA của 1024\npatch token (nền: đen)")
+    off(axes[1], "(b) PCA 3 thành phần của\n1024 patch token, nền đen", fs=10)
     axes[2].imshow(x[1].permute(1, 2, 0))
     axes[2].imshow(sim, cmap="jet", alpha=0.5, extent=(0, SIZE, SIZE, 0), vmin=0, vmax=1)
     box(axes[2], br, bc, color="white", lw=2)
-    off(axes[2], f"(c) cos(patch đỏ, mọi patch của {Path(b).name})\nô trắng = gần nhất, cos {sim.max():.2f}")
+    off(axes[2], f"(c) cos tới mọi patch của {Path(b).name}\nô trắng: gần nhất, cos {sim.max():.2f}", fs=10)
     axes[3].imshow(rgb[1], interpolation="nearest")
-    off(axes[3], f"(d) PCA token của {Path(b).name}\n(cùng phép chiếu với (b))")
+    off(axes[3], f"(d) PCA token của {Path(b).name}\ncùng phép chiếu với (b)", fs=10)
     fig.tight_layout()
-    fig.savefig(out / "vit_tokens.png", dpi=150)
+    save(fig, out / "vit_tokens.png", dpi=150)
     plt.close(fig)
     return {
         "a": rel(a),
@@ -298,34 +320,35 @@ def pipeline_detect(out: Path, cfg, backbone, device, cls: str = "pcb1") -> dict
     ax.contour(gt, levels=[0.5], colors="lime", linewidths=1)
     for p, col in ((hot, "red"), (cold, "cyan")):
         box(ax, *divmod(p, grid[1]), color=col, lw=1.8)
-    off(ax, f"① ảnh vào {cls}/{Path(s_.path).name}\nxanh lá: ground truth")
+    off(ax, f"① ảnh vào {cls}/{Path(s_.path).name}\nxanh lá: ground truth", fs=10)
     ax = axes[0, 1]
     ax.imshow(rgb, interpolation="nearest")
-    off(ax, "② 1024 patch token DINOv2\n(PCA 3 thành phần → màu)")
+    off(ax, "② 1024 patch token DINOv2\n(PCA 3 thành phần → màu)", fs=10)
     ax = axes[0, 2]
     keep = np.kron(fg.reshape(grid).float().numpy(), np.ones((grid_px, grid_px)))[..., None]
     ax.imshow(im * (0.25 + 0.75 * keep))
-    off(ax, f"③ mặt nạ vật thể (nền tối):\ngiữ {fg.float().mean():.0%} patch")
+    off(ax, f"③ mặt nạ vật thể (nền tối):\ngiữ {fg.float().mean():.0%} patch", fs=10)
     ax = axes[0, 3]
     tiles = [load_image(p, SIZE).permute(1, 2, 0).numpy() for p in shots]
     ax.imshow(np.vstack([np.hstack(tiles[:2]), np.hstack(tiles[2:])]))
-    off(ax, f"④ bộ nhớ: 4 shot × {len(views)} view\n= {len(product.memory)} patch token")
+    off(ax, f"④ bộ nhớ: 4 shot × {len(views)} view\n= {len(product.memory)} patch token", fs=10)
     for col_i, (p, col, tag) in enumerate(((hot, "red", "patch đỏ"), (cold, "cyan", "patch xanh"))):
         view, s, pp = nearest(p)
         ax = axes[1, col_i]
         ax.imshow(augment_apply(load_image(shots[s], SIZE), view).permute(1, 2, 0).numpy())
         box(ax, *divmod(pp, grid[1]), color=col, lw=2)
-        off(ax, f"⑤ láng giềng gần nhất của {tag}:\n{Path(shots[s]).name} ({view}), d = {float(d[p]):.3f}")
+        vname = {"identity": "gốc", "hflip": "lật ngang", "vflip": "lật dọc"}.get(view, view)
+        off(ax, f"⑤ láng giềng của {tag}:\n{Path(shots[s]).name} {vname}, d = {float(d[p]):.3f}", fs=10)
     ax = axes[1, 2]
     ax.imshow(dm.reshape(grid).numpy(), cmap="jet", interpolation="nearest", vmin=0)
-    off(ax, "⑥ khoảng cách cos tới bộ nhớ\ntừng patch (nền = 0)")
+    off(ax, "⑥ khoảng cách tới bộ nhớ\ncủa từng patch (nền = 0)", fs=10)
     ax = axes[1, 3]
     ax.imshow(im)
     ax.imshow(amap, cmap="jet", alpha=0.45, vmin=0)
     ax.contour(gt, levels=[0.5], colors="white", linewidths=0.8)
-    off(ax, f"⑦ bản đồ lỗi; S = {score:.3f} > δ = {thr:.3f}\n→ báo LỖI")
+    off(ax, f"⑦ bản đồ lỗi, S = {score:.3f} > δ = {thr:.3f}\n→ báo lỗi", fs=10)
     fig.tight_layout()
-    fig.savefig(out / "pipeline_detect.png", dpi=150)
+    save(fig, out / "pipeline_detect.png", dpi=150)
     plt.close(fig)
     return {
         "image": rel(s_.path),
@@ -373,15 +396,15 @@ def pipeline_route(out: Path, cfg, backbone, device, inputs: list[tuple[str, Pat
     for j, cls in enumerate(KNOWN):
         ax = fig.add_subplot(gs[0, j])
         ax.imshow(img(thumbs[cls]))
-        off(ax, f"đã đăng ký: {cls}")
+        off(ax, cls, fs=10)
     lo = min(float(sims.min()), tau) - 0.05  # one x scale for all rows
     res = []
     for i, (tag, p) in enumerate(inputs):
         ax = fig.add_subplot(gs[i + 1, 0])
         ax.imshow(x[i].permute(1, 2, 0))
         routed = rr.names[i]
-        dec = f"→ {routed.split('/')[-1]}" if routed else "→ TỪ CHỐI"
-        off(ax, f"{tag}\n{p.parts[-5]}/{p.name}\n{dec}")
+        dec = f"→ {routed.split('/')[-1]}" if routed else "→ từ chối"
+        off(ax, f"{tag}\n{p.parts[-5]}/{p.name}\n{dec}", fs=9)
         for s in ax.spines.values():
             s.set_visible(True)
             s.set_color("tab:red" if routed is None else "tab:green")
@@ -391,17 +414,33 @@ def pipeline_route(out: Path, cfg, backbone, device, inputs: list[tuple[str, Pat
         short = [n.split("/")[-1] for n in names]
         colors = ["tab:green" if (routed and n == routed) else "tab:gray" for n in names]
         ax.barh(short, vals, color=colors, height=0.7)
-        ax.axvline(tau, color="tab:red", ls="--", lw=1.2, label=f"τ = {tau:.3f}")
-        ax.legend(loc="lower right", fontsize=9, frameon=False)
+        ax.axvline(tau, color="tab:red", ls="--", lw=1.2)
+        ax.text(
+            tau,
+            1.01,
+            f"τ = {tau:.3f}",
+            transform=ax.get_xaxis_transform(),
+            ha="right",
+            va="bottom",
+            fontsize=9,
+            color="tab:red",
+        )
         ax.set_xlim(lo, 1.08)
         ax.invert_yaxis()
-        ax.tick_params(labelsize=9)
+        ax.tick_params(labelsize=10)
         if i == len(inputs) - 1:
-            ax.set_xlabel("cos(CLS ảnh, prototype)", fontsize=9)
+            ax.set_xlabel("cos(CLS ảnh, prototype)", fontsize=11)
         else:
             ax.set_xticklabels([])
         for k_, v_ in enumerate(vals):
-            ax.text(max(v_, 0), k_, f" {v_:.3f}", va="center", fontsize=8)
+            ax.text(
+                max(v_, 0),
+                k_,
+                f" {v_:.3f}",
+                va="center",
+                fontsize=9,
+                bbox={"facecolor": "white", "edgecolor": "none", "pad": 0.3},
+            )
         res.append(
             {
                 "input": rel(p),
@@ -411,7 +450,7 @@ def pipeline_route(out: Path, cfg, backbone, device, inputs: list[tuple[str, Pat
             }
         )
     fig.tight_layout()
-    fig.savefig(out / "pipeline_route.png", dpi=150)
+    save(fig, out / "pipeline_route.png", dpi=150)
     plt.close(fig)
     return {"known": list(KNOWN), "tau": round(tau, 4), "inputs": res}
 
@@ -449,7 +488,7 @@ def compare_maps(out: Path, ckpts: Path, cls: str, seed: int, names: list[str]) 
         axes[r, 0].imshow(im)
         if gt.any():
             axes[r, 0].contour(gt, levels=[0.5], colors="lime", linewidths=1.2)
-        off(axes[r, 0], f"{Path(s_.path).name} ({kind})")
+        off(axes[r, 0], f"{Path(s_.path).name} ({kind})", fs=10)
         row = {"image": rel(s_.path), "label": int(s_.label)}
         for j, m in enumerate(("knn", "lora"), start=1):
             sc, mp, vmax, thr = res[m]
@@ -458,11 +497,15 @@ def compare_maps(out: Path, ckpts: Path, cls: str, seed: int, names: list[str]) 
             if gt.any():
                 axes[r, j].contour(gt, levels=[0.5], colors="white", linewidths=0.8)
             flag = "báo lỗi" if sc[i] > thr else "cho qua"
-            off(axes[r, j], f"{'kNN' if m == 'knn' else 'LoRA'}: S = {sc[i]:.3f}, δ = {thr:.3f} → {flag}")
+            off(
+                axes[r, j],
+                f"{'kNN' if m == 'knn' else 'LoRA'}: S = {sc[i]:.3f}, δ = {thr:.3f}\n→ {flag}",
+                fs=10,
+            )
             row[m] = {"score": round(float(sc[i]), 4), "delta": round(float(thr), 4)}
         used.append(row)
     fig.tight_layout()
-    fig.savefig(out / f"compare_{cls}.png", dpi=150)
+    save(fig, out / f"compare_{cls}.png", dpi=150)
     plt.close(fig)
     labels = np.array([s_.label for s_ in test])
     return {
@@ -484,12 +527,12 @@ def masking(out: Path, used: dict, backbone, device) -> dict:
     fig, axes = plt.subplots(2, len(paths), figsize=(2.6 * len(paths), 5.0))
     for j, p in enumerate(paths):
         axes[0, j].imshow(x[j].permute(1, 2, 0))
-        off(axes[0, j], f"{p.parts[-5]} / {p.name}")
+        off(axes[0, j], f"{p.parts[-5]} / {p.name}", fs=10)
         axes[1, j].imshow(x[j].permute(1, 2, 0))
         axes[1, j].imshow(m[j], cmap="Greens", alpha=0.45, extent=(0, SIZE, SIZE, 0))
-        off(axes[1, j], f"giữ {m[j].mean():.0%} patch (xanh)")
+        off(axes[1, j], f"giữ {m[j].mean():.0%} patch (xanh)", fs=10)
     fig.tight_layout()
-    fig.savefig(out / "masking.png", dpi=150)
+    save(fig, out / "masking.png", dpi=150)
     plt.close(fig)
     return {"images": [rel(p) for p in paths], "kept": [round(float(v), 3) for v in m.mean((1, 2))]}
 

@@ -21,6 +21,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+from matplotlib.ticker import FuncFormatter  # noqa: E402
 from omegaconf import OmegaConf  # noqa: E402
 
 from fscad.data.datasets import load_image  # noqa: E402
@@ -200,6 +201,7 @@ def figure(rows: list[dict], summ: list[dict], meta: dict, path: Path) -> None:
     ax.set_title("Mức drift: cảnh báo và chất lượng giảm", fontsize=9, loc="left", color=INK)
     ax.legend(fontsize=7, frameon=False, loc="upper center", bbox_to_anchor=(0.45, -0.17), ncol=2)
     for a_ in axes:
+        a_.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.1f}".replace(".", ",")))
         a_.tick_params(labelsize=8, colors=INK)
         a_.grid(axis="x" if a_ is ax else "y", color=GRID, lw=0.6, zorder=0)
         for sp in ("top", "right"):
